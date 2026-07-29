@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test ${{ matrix.os }} / py${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14, windows-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        include:
+          # One Intel-macOS cell; the rest of that matrix is covered at release time.
+          - os: macos-13
+            python-version: "3.11"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install (compiles the C++ core)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ".[test,all]"
+
+      - name: Assert the compiled core is in use
+        run: >
+          python -c "from chemeleonx.core import USING_CPP_CORE;
+          assert USING_CPP_CORE, 'FATAL: pure-Python fallback in use'"
+
+      - name: Assert the packaged profile is readable
+        run: >
+          python -c "from chemeleonx.profile import load_profile;
+          p = load_profile('default');
+          assert p['name'] == 'default' and len(p['rules']) == 15, p"
+
+      # Run from OUTSIDE the checkout so src/ can never shadow the installed
+      # package. There is deliberately no conftest.py doing a sys.path insert.
+      - name: Test against the INSTALLED package
+        shell: bash
+        run: cd "${RUNNER_TEMP}" && python -m pytest "${GITHUB_WORKSPACE}/tests" -q
+
+      - name: CLI smoke test
+        run: chemeleonx --help
+
+  fallback:
+    name: pure-Python fallback still works
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip && python -m pip install ".[test,all]"
+      - name: Force the fallback core and re-run the suite
+        env:
+          CHEMELEONX_FORCE_PYTHON_CORE: "1"
+        shell: bash
+        run: |
+          python -c "from chemeleonx.core import USING_CPP_CORE; assert not USING_CPP_CORE"
+          cd "${RUNNER_TEMP}" && python -m pytest "${GITHUB_WORKSPACE}/tests" -q
+
+  sdist:
+    name: sdist builds, is clean, and compiles
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip build "twine>=6.1"
+      - run: python -m build --sdist
+      - run: twine check --strict dist/*
+
+      - name: sdist must not contain junk
+        run: |
+          tar tzf dist/*.tar.gz > sdist.txt
+          ! grep -Eq 'DS_Store|/paper/|/wheels/|/test_data/|\.whl$|chimerax-' sdist.txt
+
+      - name: sdist must contain what the build needs
+        run: |
+          tar tzf dist/*.tar.gz > sdist.txt
+          grep -q 'CMakeLists.txt' sdist.txt
+          grep -q 'cpp/chemeleonx_core.cpp' sdist.txt
+          grep -q 'chemeleonx/profiles/default.yaml' sdist.txt
+
+      - name: sdist compiles standalone
+        run: |
+          python -m venv /tmp/fromsdist
+          /tmp/fromsdist/bin/pip install dist/*.tar.gz
+          /tmp/fromsdist/bin/python -c "from chemeleonx.core import USING_CPP_CORE; assert USING_CPP_CORE"
+
+  readme:
+    name: README has no machine-local paths
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The README is the PyPI long description; absolute paths would be public.
+      - run: "! grep -nE '/Users/|/Applications/ChimeraX-[0-9]' README.md"

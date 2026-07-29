@@ -1,0 +1,94 @@
+name: default
+neighbor_cutoff: 6.0
+occlusion_radius: 1.0
+
+assignment:
+  intra_before_inter: true
+
+rules:
+  metal_coordination:
+    priority: 10
+    distance: 3.0
+    consume:
+      acceptor: 1
+  salt_bridge:
+    priority: 20
+    distance: 4.5
+  amide_bridge:
+    priority: 25
+    distance: 3.3
+    consume:
+      donor: 1
+      acceptor: 1
+  hbond:
+    priority: 30
+    distance: 3.5
+    angle: 90.0
+    consume:
+      donor: 1
+      acceptor: 1
+  solvent_bridge:
+    priority: 40
+    distance: 3.5
+    consume:
+      donor: 1
+      acceptor: 1
+  weak_hbond:
+    priority: 50
+    distance: 4.0
+    angle: 90.0
+    consume:
+      donor: 1
+      acceptor: 1
+  pipi_stack:
+    priority: 60
+    distance: 6.0
+    angle: 45.0
+    offset: 3.0
+  cation_pi:
+    priority: 70
+    distance: 5.0
+    angle: 45.0
+    offset: 3.0
+  anion_pi:
+    priority: 80
+    distance: 5.0
+    angle: 45.0
+    offset: 3.0
+  hbond_pi:
+    priority: 90
+    distance: 4.5
+    angle: 40.0
+    donor_angle: 90.0
+    offset: 3.0
+    consume:
+      donor: 1
+  amide_pi:
+    priority: 100
+    distance: 4.5
+    angle: 40.0
+    offset: 3.0
+  halogen_bond:
+    priority: 110
+    distance: 4.1
+    angle: 100.0
+    consume:
+      halogen_donor: 1
+      acceptor: 1
+  halogen_pi:
+    priority: 120
+    distance: 6.0
+    offset: 3.0
+    consume:
+      halogen_donor: 1
+  ch_pi:
+    priority: 130
+    distance: 5.0
+    angle: 40.0
+    donor_angle: 90.0
+    offset: 3.0
+    consume:
+      donor: 1
+  hydrophobic:
+    priority: 140
+    distance: 4.0

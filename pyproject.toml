@@ -1,0 +1,112 @@
+[build-system]
+requires = ["scikit-build-core>=0.11", "pybind11>=2.12"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "chemeleonx"
+version = "0.1.0"
+description = "Biomolecular interaction detection and docked-pose rescoring, with a Python API, a CLI, and a C++ geometry core."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Aaron Sweeney", email = "ucbtasw@ucl.ac.uk" }]
+maintainers = [{ name = "Aaron Sweeney", email = "ucbtasw@ucl.ac.uk" }]
+keywords = [
+  "structural-biology",
+  "protein-ligand",
+  "molecular-interactions",
+  "hydrogen-bond",
+  "docking",
+  "rescoring",
+  "cheminformatics",
+  "mmcif",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "Operating System :: MacOS :: MacOS X",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: C++",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Bio-Informatics",
+  "Topic :: Scientific/Engineering :: Chemistry",
+]
+dependencies = [
+  "gemmi>=0.6",
+  "numpy>=1.23",
+  "PyYAML>=6",
+  "rdkit>=2023.9",
+]
+
+[project.optional-dependencies]
+protonation = ["dimorphite_dl>=2"]
+trajectory = ["MDAnalysis>=2.4"]
+dataframe = ["pandas>=1.5"]
+all = ["chemeleonx[protonation,trajectory,dataframe]"]
+test = ["pytest>=7", "chemeleonx[dataframe]"]
+
+[project.scripts]
+chemeleonx = "chemeleonx.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/SweeneyAaron/chemeleonx"
+Source = "https://github.com/SweeneyAaron/chemeleonx"
+Issues = "https://github.com/SweeneyAaron/chemeleonx/issues"
+"ChimeraX plugin" = "https://github.com/SweeneyAaron/chimerax-chemeleonx"
+
+[tool.scikit-build]
+minimum-version = "0.11"
+cmake.version = ">=3.18"
+cmake.source-dir = "."
+build-dir = "build/{wheel_tag}"
+wheel.packages = ["src/chemeleonx"]
+# The sdist otherwise sweeps in everything not gitignored. paper/ in particular
+# is 1.6 MB of manuscript figures that no user of the library needs.
+sdist.exclude = [
+  ".github",
+  "paper",
+  "test_data",
+  "wheels",
+  "dist",
+  "build",
+  "**/.DS_Store",
+  "**/__pycache__",
+  "*.egg-info",
+  "*.whl",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.cibuildwheel]
+build = ["cp310-*", "cp311-*", "cp312-*", "cp313-*"]
+# PyPy and musllinux are skipped because RDKit — a hard dependency — publishes no
+# wheels for them, so the test venv could not be provisioned. There are no 32-bit
+# NumPy/RDKit wheels for Python 3.10+ either.
+skip = ["pp*", "*-musllinux_*", "*_i686", "*-win32"]
+build-frontend = "build"
+build-verbosity = 1
+test-requires = ["pytest"]
+test-command = [
+  # core.py falls back to the pure-Python core on ImportError, silently. Without
+  # this assertion a wheel whose CMake step failed would import fine, pass every
+  # functional test, and ship 10-100x slower than intended.
+  "python -c \"from chemeleonx.core import USING_CPP_CORE; assert USING_CPP_CORE, 'FATAL: wheel fell back to the pure-Python core'\"",
+  # profile.py swallows a failed resource lookup and returns the hard-coded
+  # DEFAULT_PROFILE, so a missing profiles/default.yaml is otherwise invisible.
+  "python -c \"from chemeleonx.profile import load_profile; p = load_profile('default'); assert p['name'] == 'default' and len(p['rules']) == 15, p\"",
+  "python -m pytest {project}/tests -q",
+]
+
+[tool.cibuildwheel.linux]
+manylinux-x86_64-image = "manylinux2014"
+
+# MACOSX_DEPLOYMENT_TARGET is set per-arch in .github/workflows/release.yml,
+# not here: 10.13 is a valid floor for x86_64 but illegal on arm64 (min 11.0).
