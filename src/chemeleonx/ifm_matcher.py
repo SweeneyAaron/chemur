@@ -10,6 +10,7 @@ import json
 import warnings as py_warnings
 
 from .ifm_config import CANONICAL_FAMILIES, IFMConfig, load_ifm_config
+from .interaction_types import STACKING_TYPES as _STACKING_TYPES, canonical_family
 from .ifm_models import (
     BatchMatchResult,
     FingerprintComplex,
@@ -1917,23 +1918,7 @@ def _canonical_feature_type(feature_type: str) -> str:
 
 
 def _canonical_family(interaction_type: str) -> str | None:
-    return {
-        "hbond": "hydrogen_bond",
-        "weak_hbond": "hydrogen_bond",
-        "hbond_pi": "hydrogen_bond",
-        "salt_bridge": "ionic",
-        "anion_pi": "ionic",
-        "hydrophobic": "hydrophobic",
-        "ch_pi": "hydrophobic",
-        "pipi_stack": "aromatic_stacking",
-        "amide_pi": "aromatic_stacking",
-        "cation_pi": "cation_pi",
-        "halogen_bond": "halogen_bond",
-        "halogen_pi": "halogen_bond",
-        "metal_coordination": "metal_coordination",
-        "solvent_bridge": "water_bridge",
-        "amide_bridge": "hydrogen_bond",
-    }.get(interaction_type)
+    return canonical_family(interaction_type)
 
 
 def _canonical_subtype(
@@ -1951,7 +1936,7 @@ def _canonical_subtype(
         if target_moiety == "base":
             return "base_edge_hbond"
         return "sidechain_hbond"
-    if interaction_type == "pipi_stack":
+    if interaction_type in _STACKING_TYPES:
         if metadata.get("geometry") == "parallel":
             return "parallel_stack"
         return "t_stack"

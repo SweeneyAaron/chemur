@@ -9,42 +9,27 @@ import sys
 
 from .api import analyze, analyze_batch
 from .core import USING_CPP_CORE
+from .interaction_types import CUTOFF_HELP, INTERACTION_TYPES
 
-RULE_CUTOFF_FLAGS = [
-    ("hbond", "distance", ("--hb-distance", "--hbond-distance"), "Hydrogen bond donor-acceptor distance cutoff."),
-    ("hbond", "angle", ("--hb-angle", "--hbond-angle"), "Hydrogen bond D-H-A minimum angle."),
-    ("weak_hbond", "distance", ("--weak-hb-distance", "--weak-hbond-distance"), "Weak hydrogen bond distance cutoff."),
-    ("weak_hbond", "angle", ("--weak-hb-angle", "--weak-hbond-angle"), "Weak hydrogen bond minimum angle."),
-    ("salt_bridge", "distance", ("--salt-bridge-distance", "--sb-distance"), "Salt bridge distance cutoff."),
-    ("metal_coordination", "distance", ("--metal-distance", "--metal-coordination-distance"), "Metal coordination distance cutoff."),
-    ("amide_bridge", "distance", ("--amide-bridge-distance",), "Amide bridge distance cutoff."),
-    ("solvent_bridge", "distance", ("--solvent-bridge-distance",), "Solvent bridge summed leg distance cutoff."),
-    ("pipi_stack", "distance", ("--pipi-distance", "--pi-pi-distance"), "Pi-pi stack centroid distance cutoff."),
-    ("pipi_stack", "angle", ("--pipi-angle", "--pi-pi-angle"), "Pi-pi stack plane angle cutoff."),
-    ("pipi_stack", "offset", ("--pipi-offset", "--pi-pi-offset"), "Pi-pi stack offset cutoff."),
-    ("cation_pi", "distance", ("--cation-pi-distance",), "Cation-pi distance cutoff."),
-    ("cation_pi", "angle", ("--cation-pi-angle",), "Cation-pi point-plane angle cutoff."),
-    ("cation_pi", "offset", ("--cation-pi-offset",), "Cation-pi offset cutoff."),
-    ("anion_pi", "distance", ("--anion-pi-distance",), "Anion-pi distance cutoff."),
-    ("anion_pi", "angle", ("--anion-pi-angle",), "Anion-pi point-plane angle cutoff."),
-    ("anion_pi", "offset", ("--anion-pi-offset",), "Anion-pi offset cutoff."),
-    ("hbond_pi", "distance", ("--hbond-pi-distance", "--hb-pi-distance"), "H-bond-pi distance cutoff."),
-    ("hbond_pi", "angle", ("--hbond-pi-angle", "--hb-pi-angle"), "H-bond-pi point-plane angle cutoff."),
-    ("hbond_pi", "donor_angle", ("--hbond-pi-donor-angle", "--hb-pi-donor-angle"), "H-bond-pi donor-H-ring minimum angle."),
-    ("hbond_pi", "offset", ("--hbond-pi-offset", "--hb-pi-offset"), "H-bond-pi offset cutoff."),
-    ("amide_pi", "distance", ("--amide-pi-distance",), "Amide-pi distance cutoff."),
-    ("amide_pi", "angle", ("--amide-pi-angle",), "Amide-pi angle cutoff."),
-    ("amide_pi", "offset", ("--amide-pi-offset",), "Amide-pi offset cutoff."),
-    ("halogen_bond", "distance", ("--halogen-bond-distance",), "Halogen bond distance cutoff."),
-    ("halogen_bond", "angle", ("--halogen-bond-angle",), "Halogen bond root-X-acceptor minimum angle."),
-    ("halogen_pi", "distance", ("--halogen-pi-distance",), "Halogen-pi distance cutoff."),
-    ("halogen_pi", "offset", ("--halogen-pi-offset",), "Halogen-pi offset cutoff."),
-    ("ch_pi", "distance", ("--ch-pi-distance",), "C-H-pi distance cutoff."),
-    ("ch_pi", "angle", ("--ch-pi-angle",), "C-H-pi point-plane angle cutoff."),
-    ("ch_pi", "donor_angle", ("--ch-pi-donor-angle",), "C-H-pi donor-H-ring minimum angle."),
-    ("ch_pi", "offset", ("--ch-pi-offset",), "C-H-pi offset cutoff."),
-    ("hydrophobic", "distance", ("--hydrophobic-distance",), "Hydrophobic contact distance cutoff."),
-]
+
+def _rule_cutoff_flags() -> list[tuple[str, str, tuple[str, ...], str]]:
+    """Build the --<rule>-<cutoff> flag table from the interaction-type registry.
+
+    The primary spelling is derived from the rule name; ``aliases`` in the registry
+    keeps the older hand-written spellings (``--hb-distance``, ``--pipi-offset``,
+    ...) accepted so existing command lines do not break.
+    """
+    flags: list[tuple[str, str, tuple[str, ...], str]] = []
+    for interaction in INTERACTION_TYPES:
+        for cutoff in interaction.cutoffs:
+            primary = f"--{interaction.name.replace('_', '-')}-{cutoff.replace('_', '-')}"
+            spellings = (primary,) + tuple(interaction.aliases.get(cutoff, ()))
+            help_text = f"{interaction.label} {CUTOFF_HELP.get(cutoff, cutoff + ' cutoff.')}"
+            flags.append((interaction.name, cutoff, spellings, help_text))
+    return flags
+
+
+RULE_CUTOFF_FLAGS = _rule_cutoff_flags()
 
 
 def main(argv: list[str] | None = None) -> int:

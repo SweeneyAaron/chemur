@@ -34,6 +34,9 @@ def _initial_capacities(atoms: list[AtomRecord]) -> dict[tuple[str, int], int]:
         capacities[("donor", atom.atom_id)] += atom.donor_capacity
         capacities[("acceptor", atom.atom_id)] += atom.acceptor_capacity
         capacities[("halogen_donor", atom.atom_id)] += atom.halogen_donor_capacity
+        capacities[("chalcogen_donor", atom.atom_id)] += atom.chalcogen_donor_capacity
+        capacities[("tetrel_donor", atom.atom_id)] += atom.tetrel_donor_capacity
+        capacities[("carbon_donor", atom.atom_id)] += atom.carbon_donor_capacity
     return capacities
 
 

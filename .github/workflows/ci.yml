@@ -40,11 +40,14 @@ jobs:
           python -c "from chemeleonx.core import USING_CPP_CORE;
           assert USING_CPP_CORE, 'FATAL: pure-Python fallback in use'"
 
+      # Compared against the interaction-type registry, not a literal count: the
+      # literal silently asserted 15 for the whole of the 22-rule series.
       - name: Assert the packaged profile is readable
         run: >
           python -c "from chemeleonx.profile import load_profile;
+          from chemeleonx.interaction_types import INTERACTION_TYPES;
           p = load_profile('default');
-          assert p['name'] == 'default' and len(p['rules']) == 15, p"
+          assert p['name'] == 'default' and len(p['rules']) == len(INTERACTION_TYPES), p"
 
       # Run from OUTSIDE the checkout so src/ can never shadow the installed
       # package. There is deliberately no conftest.py doing a sys.path insert.

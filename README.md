@@ -9,9 +9,13 @@ ligand poses against a known 3D binder.
 
 - **Python API** — `chemeleonx.analyze`, `chemeleonx.analyze_batch`, `chemeleonx.score_poses`
 - **CLI** — `chemeleonx analyze`, `chemeleonx score`, `chemeleonx trajectory`
-- **15 interaction types** — hydrogen bonds (and weak/π variants), salt bridges,
-  metal coordination, amide and solvent bridges, π–π stacking, cation–π, anion–π,
-  amide–π, halogen bonds, halogen–π, CH–π, and hydrophobic contacts
+- **22 interaction types, each with defined geometry** — hydrogen bonds (and
+  weak/π/sulfur/low-barrier variants), salt bridges, metal coordination, amide and
+  solvent bridges, π–π stacking, aliphatic–aromatic and aliphatic–aliphatic ring
+  stacking, cation–π, anion–π, edgewise anion–aromatic, amide–π, halogen bonds,
+  halogen–π, **chalcogen bonds**, chalcogen–π, **tetrel bonds**, **n→π\***, CH–π,
+  and hydrophobic contacts. The σ-hole, stacking and n→π\* geometries follow
+  [Adhav & Saikrishnan, *ACS Omega* **2023**, 8, 22268](https://doi.org/10.1021/acsomega.3c00205).
 - **Template-driven ligand chemistry** — SMILES, SDF, or an automatic lookup in the
   RCSB Chemical Component Dictionary; the template is authoritative for protonation,
   charge, donor/acceptor status and aromaticity, while coordinates stay authoritative
@@ -245,18 +249,47 @@ chemeleonx analyze structure.cif \
 
 Useful cutoff flags include:
 
-- `--hb-distance`, `--hb-angle`
+- `--hb-distance`, `--hb-angle`, `--hbond-sulfur-distance`, `--hbond-short-distance`
 - `--weak-hb-distance`, `--weak-hb-angle`
 - `--salt-bridge-distance`
 - `--metal-distance`
 - `--pipi-distance`, `--pipi-angle`, `--pipi-offset`
+- `--aliphatic-pi-stack-distance`, `--aliphatic-pi-stack-angle`, `--aliphatic-pi-stack-offset`
 - `--cation-pi-distance`, `--cation-pi-angle`, `--cation-pi-offset`
 - `--anion-pi-distance`, `--anion-pi-angle`, `--anion-pi-offset`
+- `--anion-aromatic-edge-distance`, `--anion-aromatic-edge-min-angle`
 - `--hbond-pi-distance`, `--hbond-pi-angle`, `--hbond-pi-donor-angle`, `--hbond-pi-offset`
+- `--n-pi-star-distance`, `--n-pi-star-min-angle`, `--n-pi-star-angle`, `--n-pi-star-approach-angle`
 - `--halogen-bond-distance`, `--halogen-bond-angle`
+- `--chalcogen-bond-distance`, `--chalcogen-bond-angle`
 - `--halogen-pi-distance`, `--halogen-pi-offset`
+- `--chalcogen-pi-distance`, `--chalcogen-pi-angle`, `--chalcogen-pi-offset`
+- `--tetrel-bond-distance`, `--tetrel-bond-min-distance`, `--tetrel-bond-angle`
 - `--ch-pi-distance`, `--ch-pi-angle`, `--ch-pi-donor-angle`, `--ch-pi-offset`
 - `--hydrophobic-distance`
+
+Every flag is generated from `chemeleonx.interaction_types.INTERACTION_TYPES`, so
+`chemeleonx analyze --help` is always the complete list.
+
+`chalcogen_bond` additionally requires the donor to carry a *positive* σ-hole, which
+geometry cannot establish: at the C–S bond extension of an ordinary Met or Cys the
+electrostatic potential is negative, so there is nothing to donate into. A sulfur
+counts as activated when it is aromatic (thiophene, thiazole, thiadiazole), bonded to
+N/O/halogen, cationic (sulfonium — S-adenosylmethionine), or conjugated into a C=S
+bearing N or O (thioamide, thiourea). Plain thioethers, thiols, thioketones and
+disulfides are not. Contacts that are geometrically perfect but electronically inert
+are still reported, as raw candidates with
+`rejection_reason = "sigma_hole_not_activated"`; set
+`require_activated_sigma_hole: false` for pure-geometry behaviour.
+
+`chalcogen_pi` is deliberately **not** gated this way — Met-S···π is dispersion driven
+rather than a σ-hole interaction, and requires no activation.
+
+Rules describing genuine π interactions carry `require_aromatic: true` in the
+profile, so a saturated ligand ring (cyclohexyl, piperidine) is stacked as
+`aliphatic_pi_stack` rather than counted as π–π. Set it to `false` to restore the
+pre-0.2 behaviour. `aliphatic_stack` (saturated–saturated) ships disabled; enable
+it with `enabled: true`.
 
 ## Python
 

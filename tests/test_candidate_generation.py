@@ -149,14 +149,14 @@ def test_hbond_distance_override_changes_candidate_gate():
 
 def test_carbon_donor_pi_contact_is_ch_pi_not_hbond_pi():
     atoms = [
-        AtomRecord(0, "CG1", "C", (0.0, 0.0, 4.0), "VAL", "122", "R", "R:VAL:122", "protein", donor_capacity=1, bonds=(1,)),
+        AtomRecord(0, "CG1", "C", (0.0, 0.0, 4.0), "VAL", "122", "R", "R:VAL:122", "protein", donor_capacity=1, carbon_donor_capacity=1, bonds=(1,)),
         AtomRecord(1, "HG1", "H", (0.0, 0.0, 3.0), "VAL", "122", "R", "R:VAL:122", "protein", bonds=(0,)),
-        AtomRecord(2, "C1", "C", (1.0, 0.0, 0.0), "5FW", "401", "R", "R:5FW:401", "ligand"),
-        AtomRecord(3, "C2", "C", (0.5, 0.866, 0.0), "5FW", "401", "R", "R:5FW:401", "ligand"),
-        AtomRecord(4, "C3", "C", (-0.5, 0.866, 0.0), "5FW", "401", "R", "R:5FW:401", "ligand"),
-        AtomRecord(5, "C4", "C", (-1.0, 0.0, 0.0), "5FW", "401", "R", "R:5FW:401", "ligand"),
-        AtomRecord(6, "C5", "C", (-0.5, -0.866, 0.0), "5FW", "401", "R", "R:5FW:401", "ligand"),
-        AtomRecord(7, "C6", "C", (0.5, -0.866, 0.0), "5FW", "401", "R", "R:5FW:401", "ligand"),
+        AtomRecord(2, "C1", "C", (1.0, 0.0, 0.0), "5FW", "401", "R", "R:5FW:401", "ligand", is_aromatic=True),
+        AtomRecord(3, "C2", "C", (0.5, 0.866, 0.0), "5FW", "401", "R", "R:5FW:401", "ligand", is_aromatic=True),
+        AtomRecord(4, "C3", "C", (-0.5, 0.866, 0.0), "5FW", "401", "R", "R:5FW:401", "ligand", is_aromatic=True),
+        AtomRecord(5, "C4", "C", (-1.0, 0.0, 0.0), "5FW", "401", "R", "R:5FW:401", "ligand", is_aromatic=True),
+        AtomRecord(6, "C5", "C", (-0.5, -0.866, 0.0), "5FW", "401", "R", "R:5FW:401", "ligand", is_aromatic=True),
+        AtomRecord(7, "C6", "C", (0.5, -0.866, 0.0), "5FW", "401", "R", "R:5FW:401", "ligand", is_aromatic=True),
     ]
     components = [
         ComponentRecord("R:VAL:122", "VAL", "R", "122", "protein", (0, 1)),

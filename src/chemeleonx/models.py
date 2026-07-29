@@ -26,9 +26,16 @@ class AtomRecord:
     donor_capacity: int = 0
     acceptor_capacity: int = 0
     halogen_donor_capacity: int = 0
+    chalcogen_donor_capacity: int = 0
+    tetrel_donor_capacity: int = 0
+    carbon_donor_capacity: int = 0
     hydrogen_count: int = 0
     is_aromatic: bool = False
     is_hydrophobe: bool = False
+    # Whether a chalcogen's sigma-hole is actually positive. Geometry cannot tell:
+    # at the C-S extension of an ordinary Met or Cys the potential is negative, so
+    # nothing is there to donate into. Set during atom typing, gated on in detection.
+    sigma_hole_activated: bool = False
     bonds: tuple[int, ...] = ()
     metadata: dict[str, Any] = field(default_factory=dict)
 

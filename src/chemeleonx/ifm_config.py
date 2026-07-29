@@ -6,16 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-CANONICAL_FAMILIES = (
-    "hydrogen_bond",
-    "ionic",
-    "hydrophobic",
-    "aromatic_stacking",
-    "cation_pi",
-    "halogen_bond",
-    "metal_coordination",
-    "water_bridge",
-)
+from .interaction_types import CANONICAL_FAMILIES
 
 DEFAULT_FAMILY_WEIGHTS = {
     "metal_coordination": 4.0,
@@ -24,8 +15,14 @@ DEFAULT_FAMILY_WEIGHTS = {
     "aromatic_stacking": 2.5,
     "cation_pi": 2.5,
     "halogen_bond": 2.0,
+    # A chalcogen bond is directional and comparable in strength to a halogen bond
+    # (paper: up to -3 kcal/mol vs 4-5); the rest are weaker but still directional.
+    "chalcogen_bond": 2.0,
     "water_bridge": 1.5,
+    "tetrel_bond": 1.5,
+    "ring_stacking": 1.5,
     "hydrophobic": 1.0,
+    "n_pi_star": 1.0,
 }
 
 

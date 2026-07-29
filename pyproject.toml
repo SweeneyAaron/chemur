@@ -101,7 +101,10 @@ test-command = [
   "python -c \"from chemeleonx.core import USING_CPP_CORE; assert USING_CPP_CORE, 'FATAL: wheel fell back to the pure-Python core'\"",
   # profile.py swallows a failed resource lookup and returns the hard-coded
   # DEFAULT_PROFILE, so a missing profiles/default.yaml is otherwise invisible.
-  "python -c \"from chemeleonx.profile import load_profile; p = load_profile('default'); assert p['name'] == 'default' and len(p['rules']) == 15, p\"",
+  # The rule count is checked against the interaction-type registry rather than a
+  # literal, so adding a detector cannot leave this assertion stale (it silently
+  # asserted 15 for the whole of the 22-rule series).
+  "python -c \"from chemeleonx.profile import load_profile; from chemeleonx.interaction_types import INTERACTION_TYPES; p = load_profile('default'); assert p['name'] == 'default' and len(p['rules']) == len(INTERACTION_TYPES), p\"",
   "python -m pytest {project}/tests -q",
 ]
 
