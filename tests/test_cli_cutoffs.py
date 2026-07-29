@@ -1,6 +1,6 @@
 import argparse
 
-from chemeleonx.cli import _add_rule_cutoff_args, _rule_overrides_from_args
+from chemur.cli import _add_rule_cutoff_args, _rule_overrides_from_args
 
 
 def test_cli_hbond_distance_override():

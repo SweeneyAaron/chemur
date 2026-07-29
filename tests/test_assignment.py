@@ -1,6 +1,6 @@
-from chemeleonx.assignment import assign_interactions
-from chemeleonx.models import AtomRecord, CandidateInteraction, ResourceDemand
-from chemeleonx.profile import load_profile
+from chemur.assignment import assign_interactions
+from chemur.models import AtomRecord, CandidateInteraction, ResourceDemand
+from chemur.profile import load_profile
 
 
 def test_intra_hbond_consumes_capacity_before_inter_hbond():

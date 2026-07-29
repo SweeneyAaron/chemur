@@ -1,12 +1,12 @@
 """The interaction-rule name set is duplicated in several places; keep them agreed.
 
-``chemeleonx.interaction_types.INTERACTION_TYPES`` is the single source of truth.
+``chemur.interaction_types.INTERACTION_TYPES`` is the single source of truth.
 Four things have to agree with it:
 
-1. ``chemeleonx/profiles/default.yaml``      -- the shipped profile
-2. ``chemeleonx.profile.DEFAULT_PROFILE``    -- the hard-coded fallback
-3. ``chemeleonx.cli.RULE_CUTOFF_FLAGS``      -- the ``--*-distance/-angle`` flags
-4. ``chemeleonx.interactions._DETECTORS``    -- the geometry that actually runs
+1. ``chemur/profiles/default.yaml``      -- the shipped profile
+2. ``chemur.profile.DEFAULT_PROFILE``    -- the hard-coded fallback
+3. ``chemur.cli.RULE_CUTOFF_FLAGS``      -- the ``--*-distance/-angle`` flags
+4. ``chemur.interactions._DETECTORS``    -- the geometry that actually runs
 
 A fifth lives in the ChimeraX bundle (``colors.py``'s pseudobond style table)
 and is guarded by ``tests/test_interaction_names.py`` in that repo.
@@ -18,15 +18,15 @@ only the rule *names* is not enough -- the two once disagreed on the ``hbond``
 angle (90 vs 120 degrees) for exactly that reason, so the values are compared too.
 """
 
-from chemeleonx.cli import RULE_CUTOFF_FLAGS
-from chemeleonx.ifm_config import DEFAULT_FAMILY_WEIGHTS, IFMConfig
-from chemeleonx.interaction_types import (
+from chemur.cli import RULE_CUTOFF_FLAGS
+from chemur.ifm_config import DEFAULT_FAMILY_WEIGHTS, IFMConfig
+from chemur.interaction_types import (
     CANONICAL_FAMILIES,
     INTERACTION_TYPES,
     canonical_family,
 )
-from chemeleonx.interactions import _DETECTORS
-from chemeleonx.profile import DEFAULT_PROFILE, load_profile
+from chemur.interactions import _DETECTORS
+from chemur.profile import DEFAULT_PROFILE, load_profile
 
 
 def test_packaged_yaml_is_actually_readable():
@@ -38,7 +38,7 @@ def test_packaged_yaml_is_actually_readable():
     """
     from importlib import resources
 
-    text = resources.files("chemeleonx.profiles").joinpath("default.yaml").read_text()
+    text = resources.files("chemur.profiles").joinpath("default.yaml").read_text()
     assert "rules:" in text, "packaged default.yaml is present but not a profile"
 
 

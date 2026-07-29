@@ -1,11 +1,11 @@
 """MD-trajectory interaction analysis.
 
-Computes ChemeleonX interactions for every frame of a trajectory and exposes
+Computes Chemur interactions for every frame of a trajectory and exposes
 time-resolved views (occupancy, per-frame counts, per-interaction time series).
 
 Topology is parsed and ligands are templated **once** (both are coordinate
 independent); only the coordinate-dependent stage
-(:func:`chemeleonx.api.assign_for_atoms`) reruns per frame. Frames can be processed
+(:func:`chemur.api.assign_for_atoms`) reruns per frame. Frames can be processed
 in parallel across CPUs with :mod:`multiprocessing`.
 
 Two frame sources are provided:
@@ -15,7 +15,7 @@ Two frame sources are provided:
   trajectory's coordsets to disk.
 * :class:`MDAnalysisFrameSource` — reads ``.gro``/``.xtc`` (and other formats)
   directly via MDAnalysis. Used by the CLI and tests. Requires the optional
-  ``trajectory`` extra (``pip install chemeleonx[trajectory]``).
+  ``trajectory`` extra (``pip install chemur[trajectory]``).
 """
 
 from __future__ import annotations
@@ -109,7 +109,7 @@ class MDAnalysisFrameSource:
     The topology is parsed by writing frame 0 to a temporary PDB and handing that
     to :func:`parse_structure` (gemmi cannot read ``.gro``/``.xtc``). Per-frame
     coordinates are streamed from the MDAnalysis ``Universe`` in topology atom
-    order. MDAnalysis reports positions in Angstrom, matching ChemeleonX.
+    order. MDAnalysis reports positions in Angstrom, matching Chemur.
 
     PBC caveat: coordinates are used as stored in the trajectory. If the
     trajectory is wrapped into the primary unit cell, molecules can be split
@@ -137,7 +137,7 @@ class MDAnalysisFrameSource:
             except ImportError as exc:  # pragma: no cover - dependency guard
                 raise RuntimeError(
                     "MDAnalysis is required to read trajectory files. Install it with "
-                    "`pip install chemeleonx[trajectory]` or `pip install MDAnalysis`."
+                    "`pip install chemur[trajectory]` or `pip install MDAnalysis`."
                 ) from exc
             self._universe = mda.Universe(self.topology, self.trajectory)
         return self._universe
@@ -533,8 +533,8 @@ def analyze_trajectory(
         import multiprocessing as mp
 
         # spawn is the safe cross-platform default (workers re-import a clean
-        # chemeleonx); CHEMELEONX_MP_CONTEXT lets Linux users opt into faster fork.
-        ctx = mp.get_context(os.environ.get("CHEMELEONX_MP_CONTEXT", "spawn"))
+        # chemur); CHEMUR_MP_CONTEXT lets Linux users opt into faster fork.
+        ctx = mp.get_context(os.environ.get("CHEMUR_MP_CONTEXT", "spawn"))
         with ctx.Pool(
             processes=processes,
             initializer=_worker_init,

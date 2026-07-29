@@ -9,11 +9,11 @@ from math import cos, pi, radians, sin
 
 import pytest
 
-from chemeleonx.features import perceive_features
-from chemeleonx.interactions import generate_candidates
-from chemeleonx.models import AtomRecord, ComponentRecord
-from chemeleonx.parser import _assign_default_atom_chemistry
-from chemeleonx.profile import load_profile
+from chemur.features import perceive_features
+from chemur.interactions import generate_candidates
+from chemur.models import AtomRecord, ComponentRecord
+from chemur.parser import _assign_default_atom_chemistry
+from chemur.profile import load_profile
 
 
 def detect(atoms, components, profile=None):
@@ -413,7 +413,7 @@ def test_ch_pi_is_detected_from_a_templated_ligand_carbon():
 
 def test_rdkit_template_gives_carbons_a_carbon_donor_capacity():
     chem = pytest.importorskip("rdkit.Chem")
-    from chemeleonx.chemistry import rdkit_atom_annotations
+    from chemur.chemistry import rdkit_atom_annotations
 
     annotation = rdkit_atom_annotations(chem.MolFromSmiles("C"))[0]
 
@@ -482,7 +482,7 @@ def test_ordinary_hydrogen_bond_is_not_flagged_low_barrier():
 )
 def test_sigma_hole_activation_matches_the_chemistry(group, smiles, activated):
     chem = pytest.importorskip("rdkit.Chem")
-    from chemeleonx.chemistry import _sigma_hole_activated
+    from chemur.chemistry import _sigma_hole_activated
 
     molecule = chem.MolFromSmiles(smiles)
     chalcogens = [a for a in molecule.GetAtoms() if a.GetSymbol() in {"S", "Se"}]
@@ -508,7 +508,7 @@ def test_sigma_hole_activation_matches_the_chemistry(group, smiles, activated):
 )
 def test_chalcogen_donor_capacity_by_oxidation_state(group, smiles, capacity):
     chem = pytest.importorskip("rdkit.Chem")
-    from chemeleonx.chemistry import _chalcogen_donor_capacity
+    from chemur.chemistry import _chalcogen_donor_capacity
 
     molecule = chem.MolFromSmiles(smiles)
     sulfur = [a for a in molecule.GetAtoms() if a.GetSymbol() in {"S", "Se"}][0]
@@ -579,7 +579,7 @@ def test_deuterium_is_treated_as_hydrogen():
     Keying on element == "H" alone found zero hydrogen bonds in a neutron structure and
     reported it as missing_donor_hydrogen_geometry -- a silent wrong answer, not an error.
     """
-    from chemeleonx.parser import normalize_element
+    from chemur.parser import normalize_element
 
     assert normalize_element("D") == "H"
     assert normalize_element("T") == "H"

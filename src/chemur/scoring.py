@@ -7,8 +7,8 @@ similarity.
 
 High-level usage::
 
-    import chemeleonx
-    ranked = chemeleonx.score_poses(
+    import chemur
+    ranked = chemur.score_poses(
         "receptor.pdb",
         ligand_sdf_dir="docked_poses",
         reference_sdf="crystal_ligand.sdf",
@@ -176,7 +176,7 @@ def score_poses(
     profiles. The reference itself is excluded unless ``include_reference=True``.
 
     ``profile`` is the CoSPLIF scoring profile (default ``cosplif_pose_v1``);
-    ``analysis_profile`` is the ChemeleonX interaction-detection rule profile.
+    ``analysis_profile`` is the Chemur interaction-detection rule profile.
     """
     if ligand_sdf is None and ligand_sdf_dir is None:
         raise ValueError("score_poses requires ligand_sdf or ligand_sdf_dir")

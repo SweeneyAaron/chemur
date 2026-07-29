@@ -1,4 +1,4 @@
-from chemeleonx.models import (
+from chemur.models import (
     AnalysisResult,
     AssignedInteraction,
     AtomRecord,

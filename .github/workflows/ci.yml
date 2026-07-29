@@ -37,15 +37,15 @@ jobs:
 
       - name: Assert the compiled core is in use
         run: >
-          python -c "from chemeleonx.core import USING_CPP_CORE;
+          python -c "from chemur.core import USING_CPP_CORE;
           assert USING_CPP_CORE, 'FATAL: pure-Python fallback in use'"
 
       # Compared against the interaction-type registry, not a literal count: the
       # literal silently asserted 15 for the whole of the 22-rule series.
       - name: Assert the packaged profile is readable
         run: >
-          python -c "from chemeleonx.profile import load_profile;
-          from chemeleonx.interaction_types import INTERACTION_TYPES;
+          python -c "from chemur.profile import load_profile;
+          from chemur.interaction_types import INTERACTION_TYPES;
           p = load_profile('default');
           assert p['name'] == 'default' and len(p['rules']) == len(INTERACTION_TYPES), p"
 
@@ -56,7 +56,7 @@ jobs:
         run: cd "${RUNNER_TEMP}" && python -m pytest "${GITHUB_WORKSPACE}/tests" -q
 
       - name: CLI smoke test
-        run: chemeleonx --help
+        run: chemur --help
 
   fallback:
     name: pure-Python fallback still works
@@ -69,10 +69,10 @@ jobs:
       - run: python -m pip install --upgrade pip && python -m pip install ".[test,all]"
       - name: Force the fallback core and re-run the suite
         env:
-          CHEMELEONX_FORCE_PYTHON_CORE: "1"
+          CHEMUR_FORCE_PYTHON_CORE: "1"
         shell: bash
         run: |
-          python -c "from chemeleonx.core import USING_CPP_CORE; assert not USING_CPP_CORE"
+          python -c "from chemur.core import USING_CPP_CORE; assert not USING_CPP_CORE"
           cd "${RUNNER_TEMP}" && python -m pytest "${GITHUB_WORKSPACE}/tests" -q
 
   sdist:
@@ -96,14 +96,14 @@ jobs:
         run: |
           tar tzf dist/*.tar.gz > sdist.txt
           grep -q 'CMakeLists.txt' sdist.txt
-          grep -q 'cpp/chemeleonx_core.cpp' sdist.txt
-          grep -q 'chemeleonx/profiles/default.yaml' sdist.txt
+          grep -q 'cpp/chemur_core.cpp' sdist.txt
+          grep -q 'chemur/profiles/default.yaml' sdist.txt
 
       - name: sdist compiles standalone
         run: |
           python -m venv /tmp/fromsdist
           /tmp/fromsdist/bin/pip install dist/*.tar.gz
-          /tmp/fromsdist/bin/python -c "from chemeleonx.core import USING_CPP_CORE; assert USING_CPP_CORE"
+          /tmp/fromsdist/bin/python -c "from chemur.core import USING_CPP_CORE; assert USING_CPP_CORE"
 
   readme:
     name: README has no machine-local paths

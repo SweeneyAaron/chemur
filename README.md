@@ -1,14 +1,14 @@
-# ChemeleonX
+# Chemur
 
-[![PyPI](https://img.shields.io/pypi/v/chemeleonx.svg)](https://pypi.org/project/chemeleonx/)
-[![Python](https://img.shields.io/pypi/pyversions/chemeleonx.svg)](https://pypi.org/project/chemeleonx/)
+[![PyPI](https://img.shields.io/pypi/v/chemur.svg)](https://pypi.org/project/chemur/)
+[![Python](https://img.shields.io/pypi/pyversions/chemur.svg)](https://pypi.org/project/chemur/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Detect biomolecular interactions in PDB/mmCIF structures, and rescore docked
 ligand poses against a known 3D binder.
 
-- **Python API** — `chemeleonx.analyze`, `chemeleonx.analyze_batch`, `chemeleonx.score_poses`
-- **CLI** — `chemeleonx analyze`, `chemeleonx score`, `chemeleonx trajectory`
+- **Python API** — `chemur.analyze`, `chemur.analyze_batch`, `chemur.score_poses`
+- **CLI** — `chemur analyze`, `chemur score`, `chemur trajectory`
 - **22 interaction types, each with defined geometry** — hydrogen bonds (and
   weak/π/sulfur/low-barrier variants), salt bridges, metal coordination, amide and
   solvent bridges, π–π stacking, aliphatic–aromatic and aliphatic–aliphatic ring
@@ -27,13 +27,13 @@ ligand poses against a known 3D binder.
   [RDKit](https://www.rdkit.org)
 - C++17/pybind11 geometry and neighbour-search hot loops, with a pure-Python fallback
 
-A [ChimeraX plugin](https://github.com/SweeneyAaron/chimerax-chemeleonx) builds on
+A [ChimeraX plugin](https://github.com/SweeneyAaron/chimerax-chemur) builds on
 this library for interactive 3D visualisation.
 
 ## Install
 
 ```bash
-pip install chemeleonx
+pip install chemur
 ```
 
 Prebuilt wheels are published for CPython 3.10–3.13 on Linux x86_64, macOS
@@ -45,22 +45,22 @@ the source distribution and needs a C++17 compiler and CMake ≥ 3.18.
 | Extra | Installs | Enables |
 | --- | --- | --- |
 | `protonation` | `dimorphite_dl` | pH-range ligand protonation (`--protonate`) |
-| `trajectory` | `MDAnalysis` | reading trajectories in `chemeleonx trajectory` |
+| `trajectory` | `MDAnalysis` | reading trajectories in `chemur trajectory` |
 | `dataframe` | `pandas` | `AnalysisResult.to_dataframe()` |
 | `all` | all of the above | |
 
 ```bash
-pip install "chemeleonx[all]"
+pip install "chemur[all]"
 ```
 
-> `MDAnalysis` is GPL-2.0-or-later. ChemeleonX itself is MIT and neither bundles
+> `MDAnalysis` is GPL-2.0-or-later. Chemur itself is MIT and neither bundles
 > nor links it, but installing the `trajectory` extra produces an environment
 > subject to the GPL.
 
 ### Verify the compiled core
 
 ```bash
-python -c "from chemeleonx.core import USING_CPP_CORE; print('C++ core:', USING_CPP_CORE)"
+python -c "from chemur.core import USING_CPP_CORE; print('C++ core:', USING_CPP_CORE)"
 ```
 
 Expected output is `C++ core: True`. If it prints `False`, the pure-Python
@@ -68,14 +68,14 @@ fallback loaded — correct results, but 10–100× slower. From a wheel this sh
 never happen; from an sdist build it means CMake or the compiler failed, so
 re-run `pip install . -v` and read the build log.
 
-Set `CHEMELEONX_FORCE_PYTHON_CORE=1` to select the fallback deliberately.
+Set `CHEMUR_FORCE_PYTHON_CORE=1` to select the fallback deliberately.
 
 ## Quick start
 
 ```python
-import chemeleonx
+import chemur
 
-result = chemeleonx.analyze("receptor.cif")
+result = chemur.analyze("receptor.cif")
 for interaction in result.interactions:
     print(interaction.interaction_type, interaction.atom_ids)
 
@@ -83,19 +83,19 @@ result.to_json("interactions.json")
 ```
 
 ```bash
-chemeleonx analyze receptor.cif --out interactions.json --csv interactions.csv
+chemur analyze receptor.cif --out interactions.json --csv interactions.csv
 ```
 
 ## Development
 
 ```bash
-git clone https://github.com/SweeneyAaron/chemeleonx
-cd chemeleonx
+git clone https://github.com/SweeneyAaron/chemur
+cd chemur
 
-conda create -n chemeleonx-dev -c conda-forge \
+conda create -n chemur-dev -c conda-forge \
   python=3.11 rdkit gemmi numpy pyyaml pandas pytest \
   cmake ninja pybind11 scikit-build-core cxx-compiler
-conda activate chemeleonx-dev
+conda activate chemur-dev
 
 pip install -e ".[test,all]" -v
 pytest
@@ -113,21 +113,21 @@ That is what makes the wheel-level checks in CI meaningful — run
 ## CLI
 
 ```bash
-chemeleonx analyze structure.cif --ligand-smiles LIG='CC(=O)N' --out interactions.json
-chemeleonx analyze structure.pdb --ligand-smiles-file ligands.json --csv interactions.csv
+chemur analyze structure.cif --ligand-smiles LIG='CC(=O)N' --out interactions.json
+chemur analyze structure.pdb --ligand-smiles-file ligands.json --csv interactions.csv
 ```
 
 By default, the CLI also writes one filtered result per ligand component to
 `ligand_outputs/`:
 
 ```bash
-chemeleonx analyze structure.cif --ligand-smiles-file ligands.json
+chemur analyze structure.cif --ligand-smiles-file ligands.json
 ```
 
 Choose a different split directory or output format with:
 
 ```bash
-chemeleonx analyze structure.cif \
+chemur analyze structure.cif \
   --ligand-smiles-file ligands.json \
   --split-by-ligand-dir ligand_outputs \
   --split-by-ligand-format both
@@ -140,15 +140,15 @@ Use `--include-raw` to include raw candidates in each split output too.
 Disable per-ligand splitting when you only want aggregate JSON/CSV output:
 
 ```bash
-chemeleonx analyze structure.cif --no-split-by-ligand --out interactions.json
+chemur analyze structure.cif --no-split-by-ligand --out interactions.json
 ```
 
 Use SDF ligands when the ligand coordinates should come from docked or external
 ligand files rather than from the structure file:
 
 ```bash
-chemeleonx analyze receptor.pdb --ligand-sdf docked_ligand.sdf
-chemeleonx analyze receptor.pdb --ligand-sdf-dir docked_ligands/
+chemur analyze receptor.pdb --ligand-sdf docked_ligand.sdf
+chemur analyze receptor.pdb --ligand-sdf-dir docked_ligands/
 ```
 
 SDF coordinates are used directly. Bond order, aromaticity, formal charge,
@@ -159,7 +159,7 @@ PDB/mmCIF are skipped so the SDF coordinates are authoritative.
 Multiple SDF ligands are added to the receptor and analyzed together by default:
 
 ```bash
-chemeleonx analyze receptor.pdb \
+chemur analyze receptor.pdb \
   --ligand-sdf ligand_a.sdf \
   --ligand-sdf ligand_b.sdf
 ```
@@ -168,7 +168,7 @@ Use `--batch` to analyze each SDF ligand independently against the same
 structure:
 
 ```bash
-chemeleonx analyze receptor.pdb \
+chemur analyze receptor.pdb \
   --ligand-sdf-dir docked_ligands/ \
   --batch
 ```
@@ -180,13 +180,13 @@ or CSV can still be written with `--out` or `--csv`.
 SDF ligands can still be protonated before chemistry mapping:
 
 ```bash
-chemeleonx analyze receptor.pdb \
+chemur analyze receptor.pdb \
   --ligand-sdf docked_ligand.sdf \
   --protonate \
   --debug
 ```
 
-If no `--ligand-smiles` or `--ligand-smiles-file` is supplied, ChemeleonX tries to
+If no `--ligand-smiles` or `--ligand-smiles-file` is supplied, Chemur tries to
 fetch ligand SMILES from the PDB Chemical Component Dictionary using each ligand
 residue/component name. The CCD lookup uses RCSB's ligand definition files, for
 example `https://files.rcsb.org/ligands/download/HEM.cif`. Ligands that cannot
@@ -194,13 +194,13 @@ be resolved are skipped with a warning, while resolved ligands continue through
 the normal chemistry pipeline.
 
 ```bash
-chemeleonx analyze structure.cif --out interactions.json
+chemur analyze structure.cif --out interactions.json
 ```
 
 Disable the automatic lookup if needed:
 
 ```bash
-chemeleonx analyze structure.cif --no-ccd-smiles --out interactions.json
+chemur analyze structure.cif --no-ccd-smiles --out interactions.json
 ```
 
 Use `--debug` to print the final SMILES used for each ligand, including SMILES
@@ -209,7 +209,7 @@ found through the CCD fallback.
 To protonate ligand SMILES automatically before chemistry mapping:
 
 ```bash
-chemeleonx analyze structure.cif \
+chemur analyze structure.cif \
   --ligand-smiles LIG='CC(=O)N' \
   --protonate \
   --protonate-ph-min 6.8 \
@@ -217,11 +217,11 @@ chemeleonx analyze structure.cif \
   --out interactions.json
 ```
 
-With `--protonate`, ChemeleonX uses Dimorphite-DL and prints the final SMILES used
+With `--protonate`, Chemur uses Dimorphite-DL and prints the final SMILES used
 for each ligand to stderr, for example:
 
 ```text
-[chemeleonx] ligand LIG: using SMILES 'CC(=O)[NH3+]' (input 'CC(=O)N', variants=1)
+[chemur] ligand LIG: using SMILES 'CC(=O)[NH3+]' (input 'CC(=O)N', variants=1)
 ```
 
 CCD-derived SMILES are collected before protonation, so `--protonate` also works
@@ -230,7 +230,7 @@ when the ligand SMILES came from the CCD fallback.
 The final SMILES is authoritative for ligand protonation, charge, donor status,
 acceptor status, and aromaticity. Coordinates from the PDB/mmCIF remain
 authoritative for atom positions. If the structure contains a ligand hydrogen
-that is not present in the final SMILES, ChemeleonX marks that hydrogen as ignored:
+that is not present in the final SMILES, Chemur marks that hydrogen as ignored:
 it will not create donor features, consume donor capacity, or act as an
 occluding atom. If the final SMILES expects a donor hydrogen but the structure
 does not contain coordinates for it, the donor interaction is kept only as a raw
@@ -239,7 +239,7 @@ candidate with `missing_donor_hydrogen_geometry`.
 Cutoff values from the active profile can be overridden from the command line:
 
 ```bash
-chemeleonx analyze structure.cif \
+chemur analyze structure.cif \
   --ligand-smiles LIG='CC(=O)N' \
   --hb-distance 3.1 \
   --hb-angle 110 \
@@ -268,8 +268,8 @@ Useful cutoff flags include:
 - `--ch-pi-distance`, `--ch-pi-angle`, `--ch-pi-donor-angle`, `--ch-pi-offset`
 - `--hydrophobic-distance`
 
-Every flag is generated from `chemeleonx.interaction_types.INTERACTION_TYPES`, so
-`chemeleonx analyze --help` is always the complete list.
+Every flag is generated from `chemur.interaction_types.INTERACTION_TYPES`, so
+`chemur analyze --help` is always the complete list.
 
 `chalcogen_bond` additionally requires the donor to carry a *positive* σ-hole, which
 geometry cannot establish: at the C–S bond extension of an ordinary Met or Cys the
@@ -294,9 +294,9 @@ it with `enabled: true`.
 ## Python
 
 ```python
-import chemeleonx
+import chemur
 
-result = chemeleonx.analyze(
+result = chemur.analyze(
     "structure.cif",
     ligand_smiles={"LIG": "CC(=O)N"},
     scope="all",
@@ -312,12 +312,12 @@ result = chemeleonx.analyze(
 Use SDF ligands from Python:
 
 ```python
-result = chemeleonx.analyze(
+result = chemur.analyze(
     "receptor.pdb",
     ligand_sdf=["ligand_a.sdf", "ligand_b.sdf"],
 )
 
-batch_results = chemeleonx.analyze_batch(
+batch_results = chemur.analyze_batch(
     "receptor.pdb",
     ligand_sdf_dir="docked_ligands",
     protonate=True,
@@ -326,12 +326,12 @@ batch_results = chemeleonx.analyze_batch(
 
 ## Scoring docked poses against a known 3D binder
 
-`chemeleonx score` ranks a set of docked ligand poses by how closely each one
+`chemur score` ranks a set of docked ligand poses by how closely each one
 reproduces the protein–ligand interaction pattern (and 3D pharmacophore shape) of
 a **known binder** — for example an experimental co-crystal ligand. It is the
 practical "is this docked pose like the real thing?" tool.
 
-Under the hood each pose and the reference are run through the normal ChemeleonX
+Under the hood each pose and the reference are run through the normal Chemur
 interaction analysis, then compared with the **`cosplif_pose_v1`** profile, a
 hybrid scorer tuned on the CASF-2016 screening benchmark. The final score blends
 three signals:
@@ -352,7 +352,7 @@ ranking unless you ask to keep it.
 The minimal invocation needs a receptor, the docked poses, and the reference:
 
 ```bash
-chemeleonx score receptor.pdb \
+chemur score receptor.pdb \
   --ligand-sdf-dir docked_poses/ \
   --reference-sdf crystal_ligand.sdf \
   --out scores.json \
@@ -371,7 +371,7 @@ files (`--ligand-sdf`, repeatable). Specify the known binder in one of two ways
 
 ```bash
 # Reference is one of the docked poses (e.g. the top-ranked or a manually chosen one)
-chemeleonx score receptor.pdb --ligand-sdf-dir docked_poses/ --reference-id pose_017 --out scores.json
+chemur score receptor.pdb --ligand-sdf-dir docked_poses/ --reference-id pose_017 --out scores.json
 ```
 
 Outputs:
@@ -399,7 +399,7 @@ Other useful flags:
 
 - `--profile NAME` — scoring profile (default `cosplif_pose_v1`).
 - `--cosplif-config profiles.json` — define custom scoring profiles (see below).
-- `--analysis-profile NAME` — the ChemeleonX interaction-detection rule profile used
+- `--analysis-profile NAME` — the Chemur interaction-detection rule profile used
   during analysis (default `default`); distinct from the scoring `--profile`.
 - `--protonate`, `--protonate-ph-min`, `--protonate-ph-max` — protonate ligands
   before chemistry mapping (same as `analyze`).
@@ -414,9 +414,9 @@ Other useful flags:
 One-call workflow (analyze + score + rank):
 
 ```python
-import chemeleonx
+import chemur
 
-ranked = chemeleonx.score_poses(
+ranked = chemur.score_poses(
     "receptor.pdb",
     ligand_sdf_dir="docked_poses",     # or ligand_sdf=["a.sdf", "b.sdf"]
     reference_sdf="crystal_ligand.sdf", # or reference_id="pose_017"
@@ -429,7 +429,7 @@ for row in ranked[:5]:
 If you have already run analysis, score directly from `AnalysisResult` objects:
 
 ```python
-from chemeleonx import analyze, analyze_batch, build_scoring_batch, score_pose_batch
+from chemur import analyze, analyze_batch, build_scoring_batch, score_pose_batch
 
 results = analyze_batch("receptor.pdb", ligand_sdf_dir="docked_poses")
 results["__reference__"] = analyze("receptor.pdb", ligand_sdf="crystal_ligand.sdf")
@@ -459,7 +459,7 @@ profiles, each starting from a built-in `base` and overriding fields:
 ```
 
 ```bash
-chemeleonx score receptor.pdb --ligand-sdf-dir docked_poses/ \
+chemur score receptor.pdb --ligand-sdf-dir docked_poses/ \
   --reference-sdf crystal_ligand.sdf \
   --cosplif-config profiles.json --profile pose_bw050 --out scores.json
 ```
@@ -471,10 +471,10 @@ Tunable fields include `ligand_block_weight`, `hybrid_ifm_weight`,
 ## ChimeraX plugin
 
 Interactive 3D visualisation lives in a separate distribution,
-[ChimeraX-ChemeleonX](https://github.com/SweeneyAaron/chimerax-chemeleonx):
+[ChimeraX-Chemur](https://github.com/SweeneyAaron/chimerax-chemur):
 interactions drawn as pseudobonds, a searchable results table, 2D interaction
 diagrams, model and docked-pose comparison figures, and trajectory plots. It
-declares `chemeleonx` as a dependency, so installing the bundle from the
+declares `chemur` as a dependency, so installing the bundle from the
 ChimeraX Toolshed pulls this library in automatically.
 
 ## License
@@ -486,6 +486,6 @@ MIT — see [LICENSE](LICENSE).
 A manuscript is in preparation. Until then, please cite the repository:
 
 ```
-Sweeney, A. ChemeleonX: biomolecular interaction detection and docked-pose
-rescoring. https://github.com/SweeneyAaron/chemeleonx
+Sweeney, A. Chemur: biomolecular interaction detection and docked-pose
+rescoring. https://github.com/SweeneyAaron/chemur
 ```

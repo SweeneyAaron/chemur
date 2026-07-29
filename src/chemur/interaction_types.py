@@ -1,15 +1,15 @@
 """The interaction-type registry: one declaration per detected interaction.
 
 Before this module the same list of interaction names was written out by hand in
-six places -- the detector call list in :mod:`chemeleonx.interactions`, the shipped
+six places -- the detector call list in :mod:`chemur.interactions`, the shipped
 profile, the hard-coded profile fallback, the CLI cutoff flags, and two verbatim
-copies of ``_canonical_family`` (one in :mod:`chemeleonx.cosplif`, one in
-:mod:`chemeleonx.ifm_matcher`). Nothing tied them together, and an interaction that
+copies of ``_canonical_family`` (one in :mod:`chemur.cosplif`, one in
+:mod:`chemur.ifm_matcher`). Nothing tied them together, and an interaction that
 was missing from the family maps was silently dropped from every score rather than
 failing loudly.
 
 Everything here is plain data with no intra-package imports, so any module can
-depend on it. :mod:`chemeleonx.interactions` owns the detector functions and binds
+depend on it. :mod:`chemur.interactions` owns the detector functions and binds
 them to these names; ``tests/test_profile_consistency.py`` asserts that the
 registry, the profiles and the detector table all agree.
 """

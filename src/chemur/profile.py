@@ -169,7 +169,7 @@ def load_profile(profile: str | Path | dict[str, Any] = "default") -> dict[str, 
         raise FileNotFoundError(f"Profile {profile!r} was not found")
 
     try:
-        with resources.files("chemeleonx.profiles").joinpath("default.yaml").open(
+        with resources.files("chemur.profiles").joinpath("default.yaml").open(
             "r", encoding="utf-8"
         ) as handle:
             return _merge_profile(_load_yaml_text(handle.read(), require_yaml=False))

@@ -319,8 +319,8 @@ bool is_occluded_py(
     return is_occluded(start, end, points, ignore, radius);
 }
 
-PYBIND11_MODULE(_chemeleonx_core, m) {
-    m.doc() = "C++ geometry and neighbor-search core for standalone ChemeleonX";
+PYBIND11_MODULE(_chemur_core, m) {
+    m.doc() = "C++ geometry and neighbor-search core for standalone Chemur";
     m.def("distance", &distance, py::arg("a"), py::arg("b"));
     m.def("angle", &angle, py::arg("a"), py::arg("b"), py::arg("c"));
     m.def("centroid", &centroid, py::arg("points"));

@@ -33,7 +33,7 @@ RULE_CUTOFF_FLAGS = _rule_cutoff_flags()
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="chemeleonx")
+    parser = argparse.ArgumentParser(prog="chemur")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     analyze_parser = subparsers.add_parser("analyze", help="Analyze biomolecular interactions")
@@ -128,7 +128,7 @@ def main(argv: list[str] | None = None) -> int:
         "--protonate-max-variants",
         type=int,
         default=1,
-        help="Maximum Dimorphite-DL variants per ligand; ChemeleonX uses the first returned variant.",
+        help="Maximum Dimorphite-DL variants per ligand; Chemur uses the first returned variant.",
     )
     analyze_parser.add_argument(
         "--debug",
@@ -181,7 +181,7 @@ def main(argv: list[str] | None = None) -> int:
     score_parser.add_argument(
         "--analysis-profile",
         default="default",
-        help="ChemeleonX interaction-detection rule profile (default: default).",
+        help="Chemur interaction-detection rule profile (default: default).",
     )
     score_parser.add_argument("--scope", default="all", help="Interaction scope. V1 supports 'all'.")
     score_parser.add_argument("--threads", default="auto", help="Reserved for threaded C++ kernels.")
@@ -408,9 +408,9 @@ def _run_batch_analyze(args: argparse.Namespace, parser: argparse.ArgumentParser
 
 def _run_score(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     if not args.ligand_sdf and not args.ligand_sdf_dir:
-        parser.error("chemeleonx score requires --ligand-sdf or --ligand-sdf-dir")
+        parser.error("chemur score requires --ligand-sdf or --ligand-sdf-dir")
     if not args.reference_sdf and not args.reference_id:
-        parser.error("chemeleonx score requires --reference-sdf or --reference-id")
+        parser.error("chemur score requires --reference-sdf or --reference-id")
 
     from .scoring import score_poses
 
@@ -474,7 +474,7 @@ def _write_score_csv(rows: list[dict], path: str | Path) -> None:
 
 def _render_score_report(rows: list[dict], profile: str) -> str:
     lines = [
-        f"ChemeleonX pose ranking (profile: {profile})",
+        f"Chemur pose ranking (profile: {profile})",
         f"{'rank':>4}  {'score':>9}  ligand",
     ]
     for row in rows:

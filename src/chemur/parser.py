@@ -246,7 +246,7 @@ def parse_embedded_ligand_smiles(path: str | Path) -> dict[str, str]:
     dictionary, so this reads the raw CIF separately. AlphaFold3 writes the SMILES
     directly as ``_chem_comp.pdbx_smiles``; wwPDB files instead carry a
     ``_pdbx_chem_comp_descriptor`` loop (the same form CCD files use, so we reuse
-    :func:`chemeleonx.ccd._choose_smiles`). Returns ``{}`` for PDB inputs, when no SMILES
+    :func:`chemur.ccd._choose_smiles`). Returns ``{}`` for PDB inputs, when no SMILES
     is present, or on any parse error, so callers can fall back to a CCD lookup.
     """
     path = Path(path)

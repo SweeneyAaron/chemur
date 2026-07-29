@@ -2,10 +2,10 @@ import warnings
 
 import pytest
 
-from chemeleonx.chemistry import apply_ligand_smiles_templates, mark_untemplated_ligands_ignored
-from chemeleonx.errors import LigandTemplateError
-from chemeleonx.models import AtomRecord, ComponentRecord
-from chemeleonx.parser import parse_embedded_ligand_smiles
+from chemur.chemistry import apply_ligand_smiles_templates, mark_untemplated_ligands_ignored
+from chemur.errors import LigandTemplateError
+from chemur.models import AtomRecord, ComponentRecord
+from chemur.parser import parse_embedded_ligand_smiles
 
 rdkit = pytest.importorskip("rdkit")
 

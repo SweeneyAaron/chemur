@@ -161,7 +161,7 @@ def _analyze_loaded_sdf_ligands(
     strict_ligand_templates: bool = False,
 ) -> AnalysisResult:
     if scope != "all":
-        raise ValueError("Standalone ChemeleonX v1 currently supports scope='all' only")
+        raise ValueError("Standalone Chemur v1 currently supports scope='all' only")
 
     input_smiles = _merge_ligand_smiles(ligand_smiles, ligand_smiles_file)
     profile_data = apply_rule_overrides(load_profile(profile), rule_overrides)

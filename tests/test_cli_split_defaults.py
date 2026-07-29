@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from chemeleonx import cli
+from chemur import cli
 
 
 class DummyResult:

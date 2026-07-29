@@ -1,7 +1,7 @@
 import sys
 import types
 
-from chemeleonx.protonation import prepare_ligand_smiles
+from chemur.protonation import prepare_ligand_smiles
 
 
 def test_prepare_ligand_smiles_protonates_and_prints_debug(capsys, monkeypatch):

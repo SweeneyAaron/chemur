@@ -1,6 +1,6 @@
 import pytest
 
-from chemeleonx.sdf import add_sdf_ligands, load_sdf_ligands
+from chemur.sdf import add_sdf_ligands, load_sdf_ligands
 
 rdkit = pytest.importorskip("rdkit")
 

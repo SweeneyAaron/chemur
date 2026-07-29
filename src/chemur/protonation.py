@@ -36,7 +36,7 @@ def prepare_ligand_smiles(
         prepared[ligand_name] = selected_smiles
         if debug or protonate:
             message = (
-                f"[chemeleonx] ligand {ligand_name}: using SMILES {selected_smiles!r}"
+                f"[chemur] ligand {ligand_name}: using SMILES {selected_smiles!r}"
             )
             if protonate:
                 message += f" (input {smiles!r}, variants={len(protonated_variants)})"

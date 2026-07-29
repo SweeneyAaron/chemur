@@ -1,15 +1,15 @@
-class ChemeleonXError(Exception):
-    """Base exception for standalone ChemeleonX."""
+class ChemurError(Exception):
+    """Base exception for standalone Chemur."""
 
 
-class DependencyMissingError(ChemeleonXError):
+class DependencyMissingError(ChemurError):
     """Raised when an optional runtime dependency is required but unavailable."""
 
 
-class LigandTemplateError(ChemeleonXError):
+class LigandTemplateError(ChemurError):
     """Raised when a ligand SMILES template cannot be mapped safely."""
 
 
-class StructureParseError(ChemeleonXError):
+class StructureParseError(ChemurError):
     """Raised when a PDB/mmCIF structure cannot be parsed."""
 

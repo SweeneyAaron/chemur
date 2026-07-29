@@ -1,7 +1,7 @@
-from chemeleonx.features import perceive_features
-from chemeleonx.interactions import generate_candidates
-from chemeleonx.models import AtomRecord, ComponentRecord
-from chemeleonx.profile import load_profile
+from chemur.features import perceive_features
+from chemur.interactions import generate_candidates
+from chemur.models import AtomRecord, ComponentRecord
+from chemur.profile import load_profile
 
 
 def test_generates_basic_hbond_candidate():

@@ -515,7 +515,7 @@ def _tetrel_donor_capacity(atom) -> int:
 
 
 def rdkit_atom_annotations(molecule) -> dict[int, AtomAnnotation]:
-    """Return ChemeleonX's RDKit-derived per-heavy-atom chemistry annotations."""
+    """Return Chemur's RDKit-derived per-heavy-atom chemistry annotations."""
     return _template_annotations(molecule)
 
 

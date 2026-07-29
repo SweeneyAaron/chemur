@@ -3,7 +3,7 @@ requires = ["scikit-build-core>=0.11", "pybind11>=2.12"]
 build-backend = "scikit_build_core.build"
 
 [project]
-name = "chemeleonx"
+name = "chemur"
 version = "0.1.0"
 description = "Biomolecular interaction detection and docked-pose rescoring, with a Python API, a CLI, and a C++ geometry core."
 readme = "README.md"
@@ -48,24 +48,24 @@ dependencies = [
 protonation = ["dimorphite_dl>=2"]
 trajectory = ["MDAnalysis>=2.4"]
 dataframe = ["pandas>=1.5"]
-all = ["chemeleonx[protonation,trajectory,dataframe]"]
-test = ["pytest>=7", "chemeleonx[dataframe]"]
+all = ["chemur[protonation,trajectory,dataframe]"]
+test = ["pytest>=7", "chemur[dataframe]"]
 
 [project.scripts]
-chemeleonx = "chemeleonx.cli:main"
+chemur = "chemur.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/SweeneyAaron/chemeleonx"
-Source = "https://github.com/SweeneyAaron/chemeleonx"
-Issues = "https://github.com/SweeneyAaron/chemeleonx/issues"
-"ChimeraX plugin" = "https://github.com/SweeneyAaron/chimerax-chemeleonx"
+Homepage = "https://github.com/SweeneyAaron/chemur"
+Source = "https://github.com/SweeneyAaron/chemur"
+Issues = "https://github.com/SweeneyAaron/chemur/issues"
+"ChimeraX plugin" = "https://github.com/SweeneyAaron/chimerax-chemur"
 
 [tool.scikit-build]
 minimum-version = "0.11"
 cmake.version = ">=3.18"
 cmake.source-dir = "."
 build-dir = "build/{wheel_tag}"
-wheel.packages = ["src/chemeleonx"]
+wheel.packages = ["src/chemur"]
 # The sdist otherwise sweeps in everything not gitignored. paper/ in particular
 # is 1.6 MB of manuscript figures that no user of the library needs.
 sdist.exclude = [
@@ -98,13 +98,13 @@ test-command = [
   # core.py falls back to the pure-Python core on ImportError, silently. Without
   # this assertion a wheel whose CMake step failed would import fine, pass every
   # functional test, and ship 10-100x slower than intended.
-  "python -c \"from chemeleonx.core import USING_CPP_CORE; assert USING_CPP_CORE, 'FATAL: wheel fell back to the pure-Python core'\"",
+  "python -c \"from chemur.core import USING_CPP_CORE; assert USING_CPP_CORE, 'FATAL: wheel fell back to the pure-Python core'\"",
   # profile.py swallows a failed resource lookup and returns the hard-coded
   # DEFAULT_PROFILE, so a missing profiles/default.yaml is otherwise invisible.
   # The rule count is checked against the interaction-type registry rather than a
   # literal, so adding a detector cannot leave this assertion stale (it silently
   # asserted 15 for the whole of the 22-rule series).
-  "python -c \"from chemeleonx.profile import load_profile; from chemeleonx.interaction_types import INTERACTION_TYPES; p = load_profile('default'); assert p['name'] == 'default' and len(p['rules']) == len(INTERACTION_TYPES), p\"",
+  "python -c \"from chemur.profile import load_profile; from chemur.interaction_types import INTERACTION_TYPES; p = load_profile('default'); assert p['name'] == 'default' and len(p['rules']) == len(INTERACTION_TYPES), p\"",
   "python -m pytest {project}/tests -q",
 ]
 

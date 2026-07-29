@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from chemeleonx.trajectory import ArrayFrameSource, analyze_trajectory
+from chemur.trajectory import ArrayFrameSource, analyze_trajectory
 
 
 # A backbone donor (N + its H) and an acceptor (O) on two residues, plus a water.
@@ -18,7 +18,7 @@ END
 def mini_structure(tmp_path):
     pdb = tmp_path / "mini.pdb"
     pdb.write_text(MINI_PDB)
-    from chemeleonx.parser import parse_structure
+    from chemur.parser import parse_structure
 
     atoms, _ = parse_structure(str(pdb))
     base = np.array([[a.coord for a in atoms]], dtype=np.float32)

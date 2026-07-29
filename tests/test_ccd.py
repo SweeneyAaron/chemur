@@ -1,4 +1,4 @@
-from chemeleonx.ccd import _choose_smiles, _extract_descriptors
+from chemur.ccd import _choose_smiles, _extract_descriptors
 
 
 def test_extracts_preferred_ccd_smiles_descriptor():

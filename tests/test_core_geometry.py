@@ -1,6 +1,6 @@
 from math import cos, pi, sin
 
-from chemeleonx import core
+from chemur import core
 
 
 def _ring(radius, pucker):

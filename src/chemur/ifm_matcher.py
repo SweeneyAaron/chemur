@@ -837,11 +837,11 @@ def _score_protein_ifm_batch_cpp(
     try:
         from . import core
     except ImportError as exc:
-        raise RuntimeError("C++ ChemeleonX core is unavailable") from exc
+        raise RuntimeError("C++ Chemur core is unavailable") from exc
 
     scorer = getattr(core, "score_ifm_protein_batch", None)
     if scorer is None:
-        raise RuntimeError("C++ ChemeleonX core does not expose score_ifm_protein_batch")
+        raise RuntimeError("C++ Chemur core does not expose score_ifm_protein_batch")
 
     worker_count = _resolve_ifm_worker_count(workers)
     cpp_rows = scorer(

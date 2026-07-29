@@ -2,10 +2,10 @@ import json
 
 import pytest
 
-from chemeleonx import cli
-import chemeleonx.scoring as scoring_mod
-from chemeleonx.cosplif import cosplif_profile
-from chemeleonx.scoring import score_pose_batch
+from chemur import cli
+import chemur.scoring as scoring_mod
+from chemur.cosplif import cosplif_profile
+from chemur.scoring import score_pose_batch
 
 
 def _rec(interaction_id, ligand_id, family, target, *, donor=True):
