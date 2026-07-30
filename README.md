@@ -12,17 +12,13 @@ pip install chemur
 chemur analyze structure.cif --out interactions.json
 ```
 
-- **22 interaction types, each with defined geometry** — not just hydrogen bonds and
-  hydrophobic contacts, but σ-hole interactions, n→π\*, and the full family of π
-  interactions.
+- **22 interaction types, each with defined geometry** 
 - **Any pair of components.** Protein–ligand, protein–protein, protein–DNA/RNA,
   nucleic acid–ligand, ligand–ligand. Nothing is hard-coded to expect a receptor and
   a small molecule.
 - **Chemistry from templates, geometry from coordinates.** Ligands are typed from
-  SMILES, an SDF, or an automatic Chemical Component Dictionary lookup — so
-  protonation and charge are right even when the deposited model is missing hydrogens.
+  SMILES, an SDF, or an automatic Chemical Component Dictionary lookup.
 - **MD trajectories** — per-frame analysis with occupancy and time series.
-- **C++ geometry core** with a pure-Python fallback that gives identical results.
 
 A [ChimeraX plugin](https://github.com/SweeneyAaron/chimerax-chemur) builds on this
 library for interactive 3D visualisation.
@@ -152,6 +148,32 @@ range with Dimorphite-DL, and `--debug` to print the SMILES actually used.
 
 Full detail in [docs/cli.md](docs/cli.md).
 
+## Multiple ligands and docking output
+
+Pass several ligands at once, or point at a directory of sdf files.
+
+```bash
+chemur analyze receptor.pdb --ligand-sdf a.sdf --ligand-sdf b.sdf   # repeatable
+chemur analyze receptor.pdb --ligand-sdf-dir poses/                 # a whole directory
+```
+
+By default all supplied ligands are added to the structure and analysed **together**, as
+one system — right for a cofactor plus a substrate, or two ligands sharing a pocket.
+
+Docked poses are the opposite case: each is an alternative for the *same* site, so
+analysing them together would stack overlapping copies into one pocket. Use `--batch` to
+analyse each ligand independently against the same receptor:
+
+```bash
+chemur analyze receptor.pdb --ligand-sdf-dir poses/ --batch --out all_poses.json
+```
+
+Either way you also get one filtered file per ligand under `ligand_outputs/` — in batch
+mode under a subdirectory per pose — while `--out` / `--csv` write the aggregate.
+
+SDF coordinates are used directly, and ligand residues already present in the structure
+are skipped so the SDF stays authoritative.
+
 ## Trajectories
 
 ```bash
@@ -198,6 +220,6 @@ MIT — see [LICENSE](LICENSE).
 A manuscript is in preparation. Until then, please cite the repository:
 
 ```
-Sweeney, A. Chemur: biomolecular interaction detection.
+Sweeney, A, Genz, L, Topf, M. Chemur: biomolecular interaction detection.
 https://github.com/SweeneyAaron/chemur
 ```
