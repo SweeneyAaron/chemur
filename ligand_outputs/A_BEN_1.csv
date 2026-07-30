@@ -1,0 +1,9 @@
+interaction_type,assigned,stage,priority,component_ids,atom_ids,atom_labels,feature_ids,feature_types,distance,angle,offset,resource_demands,resource_labels,rejection_reason
+amide_pi,True,inter,100,A:CYS:191;A:BEN:1,1261;1262;1265;1630;1631;1632;1633;1634;1635,A:CYS:191:C:1261;A:CYS:191:O:1262;A:GLN:192:N:1265;A:BEN:1:C1:1630;A:BEN:1:C2:1631;A:BEN:1:C3:1632;A:BEN:1:C4:1633;A:BEN:1:C5:1634;A:BEN:1:C6:1635,3845;3652,amide;ring,4.0475,9.2776,0.7075,,,
+amide_pi,True,inter,100,A:TRP:215;A:BEN:1,1390;1391;1402;1630;1631;1632;1633;1634;1635,A:TRP:215:C:1390;A:TRP:215:O:1391;A:GLY:216:N:1402;A:BEN:1:C1:1630;A:BEN:1:C2:1631;A:BEN:1:C3:1632;A:BEN:1:C4:1633;A:BEN:1:C5:1634;A:BEN:1:C6:1635,3865;3652,amide;ring,4.0846,12.16,1.0227,,,
+hydrophobic,True,inter,140,A:VAL:213;A:BEN:1,1380;1634,A:VAL:213:CG1:1380;A:BEN:1:C5:1634,2747;3253,hydrophobe;hydrophobe,3.6958,,,,,
+hydrophobic,True,inter,140,A:SER:190;A:BEN:1,1255;1636,A:SER:190:C:1255;A:BEN:1:C:1636,2498;3258,hydrophobe;hydrophobe,3.7656,,,,,
+hydrophobic,True,inter,140,A:VAL:213;A:BEN:1,1380;1635,A:VAL:213:CG1:1380;A:BEN:1:C6:1635,2747;3255,hydrophobe;hydrophobe,3.7805,,,,,
+hydrophobic,True,inter,140,A:TRP:215;A:BEN:1,1390;1630,A:TRP:215:C:1390;A:BEN:1:C1:1630,2768;3245,hydrophobe;hydrophobe,3.852,,,,,
+hydrophobic,True,inter,140,A:ASP:189;A:BEN:1,1250;1636,A:ASP:189:CG:1250;A:BEN:1:C:1636,2489;3258,hydrophobe;hydrophobe,3.8929,,,,,
+hydrophobic,True,inter,140,A:CYS:191;A:BEN:1,1260;1630,A:CYS:191:CA:1260;A:BEN:1:C1:1630,2508;3245,hydrophobe;hydrophobe,3.9933,,,,,

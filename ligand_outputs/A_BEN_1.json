@@ -1,0 +1,1255 @@
+{
+  "atoms": [
+    {
+      "acceptor_capacity": 0,
+      "atom_id": 1250,
+      "bonds": [
+        1249,
+        1251,
+        1252
+      ],
+      "carbon_donor_capacity": 1,
+      "chain_id": "A",
+      "chalcogen_donor_capacity": 0,
+      "component_id": "A:ASP:189",
+      "coord": [
+        -4.241,
+        11.204,
+        13.24
+      ],
+      "donor_capacity": 0,
+      "element": "C",
+      "formal_charge": 0,
+      "halogen_donor_capacity": 0,
+      "hydrogen_count": 0,
+      "is_aromatic": false,
+      "is_hydrophobe": true,
+      "metadata": {},
+      "molecule_type": "protein",
+      "name": "CG",
+      "residue_id": "189",
+      "residue_name": "ASP",
+      "serial": 1251,
+      "sigma_hole_activated": false,
+      "tetrel_donor_capacity": 0
+    },
+    {
+      "acceptor_capacity": 0,
+      "atom_id": 1255,
+      "bonds": [
+        1254,
+        1256
+      ],
+      "carbon_donor_capacity": 1,
+      "chain_id": "A",
+      "chalcogen_donor_capacity": 0,
+      "component_id": "A:SER:190",
+      "coord": [
+        -4.689,
+        11.403,
+        17.229
+      ],
+      "donor_capacity": 0,
+      "element": "C",
+      "formal_charge": 0,
+      "halogen_donor_capacity": 0,
+      "hydrogen_count": 0,
+      "is_aromatic": false,
+      "is_hydrophobe": true,
+      "metadata": {},
+      "molecule_type": "protein",
+      "name": "C",
+      "residue_id": "190",
+      "residue_name": "SER",
+      "serial": 1256,
+      "sigma_hole_activated": false,
+      "tetrel_donor_capacity": 0
+    },
+    {
+      "acceptor_capacity": 0,
+      "atom_id": 1260,
+      "bonds": [
+        1259,
+        1261,
+        1263
+      ],
+      "carbon_donor_capacity": 1,
+      "chain_id": "A",
+      "chalcogen_donor_capacity": 0,
+      "component_id": "A:CYS:191",
+      "coord": [
+        -5.214,
+        13.339,
+        18.583
+      ],
+      "donor_capacity": 0,
+      "element": "C",
+      "formal_charge": 0,
+      "halogen_donor_capacity": 0,
+      "hydrogen_count": 0,
+      "is_aromatic": false,
+      "is_hydrophobe": true,
+      "metadata": {},
+      "molecule_type": "protein",
+      "name": "CA",
+      "residue_id": "191",
+      "residue_name": "CYS",
+      "serial": 1261,
+      "sigma_hole_activated": false,
+      "tetrel_donor_capacity": 1
+    },
+    {
+      "acceptor_capacity": 0,
+      "atom_id": 1261,
+      "bonds": [
+        1260,
+        1262
+      ],
+      "carbon_donor_capacity": 1,
+      "chain_id": "A",
+      "chalcogen_donor_capacity": 0,
+      "component_id": "A:CYS:191",
+      "coord": [
+        -4.77,
+        13.973,
+        19.911
+      ],
+      "donor_capacity": 0,
+      "element": "C",
+      "formal_charge": 0,
+      "halogen_donor_capacity": 0,
+      "hydrogen_count": 0,
+      "is_aromatic": false,
+      "is_hydrophobe": true,
+      "metadata": {},
+      "molecule_type": "protein",
+      "name": "C",
+      "residue_id": "191",
+      "residue_name": "CYS",
+      "serial": 1262,
+      "sigma_hole_activated": false,
+      "tetrel_donor_capacity": 0
+    },
+    {
+      "acceptor_capacity": 2,
+      "atom_id": 1262,
+      "bonds": [
+        1261
+      ],
+      "carbon_donor_capacity": 0,
+      "chain_id": "A",
+      "chalcogen_donor_capacity": 0,
+      "component_id": "A:CYS:191",
+      "coord": [
+        -4.075,
+        13.302,
+        20.688
+      ],
+      "donor_capacity": 0,
+      "element": "O",
+      "formal_charge": 0,
+      "halogen_donor_capacity": 0,
+      "hydrogen_count": 0,
+      "is_aromatic": false,
+      "is_hydrophobe": false,
+      "metadata": {},
+      "molecule_type": "protein",
+      "name": "O",
+      "residue_id": "191",
+      "residue_name": "CYS",
+      "serial": 1263,
+      "sigma_hole_activated": false,
+      "tetrel_donor_capacity": 0
+    },
+    {
+      "acceptor_capacity": 1,
+      "atom_id": 1265,
+      "bonds": [
+        1266
+      ],
+      "carbon_donor_capacity": 0,
+      "chain_id": "A",
+      "chalcogen_donor_capacity": 0,
+      "component_id": "A:GLN:192",
+      "coord": [
+        -5.111,
+        15.229,
+        20.141
+      ],
+      "donor_capacity": 1,
+      "element": "N",
+      "formal_charge": 0,
+      "halogen_donor_capacity": 0,
+      "hydrogen_count": 0,
+      "is_aromatic": false,
+      "is_hydrophobe": false,
+      "metadata": {},
+      "molecule_type": "protein",
+      "name": "N",
+      "residue_id": "192",
+      "residue_name": "GLN",
+      "serial": 1266,
+      "sigma_hole_activated": false,
+      "tetrel_donor_capacity": 0
+    },
+    {
+      "acceptor_capacity": 0,
+      "atom_id": 1380,
+      "bonds": [
+        1379
+      ],
+      "carbon_donor_capacity": 1,
+      "chain_id": "A",
+      "chalcogen_donor_capacity": 0,
+      "component_id": "A:VAL:213",
+      "coord": [
+        0.075,
+        10.897,
+        19.95
+      ],
+      "donor_capacity": 0,
+      "element": "C",
+      "formal_charge": 0,
+      "halogen_donor_capacity": 0,
+      "hydrogen_count": 0,
+      "is_aromatic": false,
+      "is_hydrophobe": true,
+      "metadata": {},
+      "molecule_type": "protein",
+      "name": "CG1",
+      "residue_id": "213",
+      "residue_name": "VAL",
+      "serial": 1381,
+      "sigma_hole_activated": false,
+      "tetrel_donor_capacity": 0
+    },
+    {
+      "acceptor_capacity": 0,
+      "atom_id": 1390,
+      "bonds": [
+        1389,
+        1391
+      ],
+      "carbon_donor_capacity": 1,
+      "chain_id": "A",
+      "chalcogen_donor_capacity": 0,
+      "component_id": "A:TRP:215",
+      "coord": [
+        1.654,
+        15.202,
+        15.337
+      ],
+      "donor_capacity": 0,
+      "element": "C",
+      "formal_charge": 0,
+      "halogen_donor_capacity": 0,
+      "hydrogen_count": 0,
+      "is_aromatic": false,
+      "is_hydrophobe": true,
+      "metadata": {},
+      "molecule_type": "protein",
+      "name": "C",
+      "residue_id": "215",
+      "residue_name": "TRP",
+      "serial": 1391,
+      "sigma_hole_activated": false,
+      "tetrel_donor_capacity": 0
+    },
+    {
+      "acceptor_capacity": 2,
+      "atom_id": 1391,
+      "bonds": [
+        1390
+      ],
+      "carbon_donor_capacity": 0,
+      "chain_id": "A",
+      "chalcogen_donor_capacity": 0,
+      "component_id": "A:TRP:215",
+      "coord": [
+        1.683,
+        14.037,
+        14.871
+      ],
+      "donor_capacity": 0,
+      "element": "O",
+      "formal_charge": 0,
+      "halogen_donor_capacity": 0,
+      "hydrogen_count": 0,
+      "is_aromatic": false,
+      "is_hydrophobe": false,
+      "metadata": {},
+      "molecule_type": "protein",
+      "name": "O",
+      "residue_id": "215",
+      "residue_name": "TRP",
+      "serial": 1392,
+      "sigma_hole_activated": false,
+      "tetrel_donor_capacity": 0
+    },
+    {
+      "acceptor_capacity": 1,
+      "atom_id": 1402,
+      "bonds": [
+        1403
+      ],
+      "carbon_donor_capacity": 0,
+      "chain_id": "A",
+      "chalcogen_donor_capacity": 0,
+      "component_id": "A:GLY:216",
+      "coord": [
+        0.977,
+        16.215,
+        14.809
+      ],
+      "donor_capacity": 1,
+      "element": "N",
+      "formal_charge": 0,
+      "halogen_donor_capacity": 0,
+      "hydrogen_count": 0,
+      "is_aromatic": false,
+      "is_hydrophobe": false,
+      "metadata": {},
+      "molecule_type": "protein",
+      "name": "N",
+      "residue_id": "216",
+      "residue_name": "GLY",
+      "serial": 1403,
+      "sigma_hole_activated": false,
+      "tetrel_donor_capacity": 0
+    },
+    {
+      "acceptor_capacity": 0,
+      "atom_id": 1630,
+      "bonds": [
+        1631,
+        1635,
+        1636
+      ],
+      "carbon_donor_capacity": 1,
+      "chain_id": "A",
+      "chalcogen_donor_capacity": 0,
+      "component_id": "A:BEN:1",
+      "coord": [
+        -1.853,
+        14.311,
+        16.658
+      ],
+      "donor_capacity": 0,
+      "element": "C",
+      "formal_charge": 0,
+      "halogen_donor_capacity": 0,
+      "hydrogen_count": 0,
+      "is_aromatic": true,
+      "is_hydrophobe": true,
+      "metadata": {
+        "chemistry_source": "smiles",
+        "structure_hydrogen_count": 0,
+        "template_hydrogen_count": 0
+      },
+      "molecule_type": "ligand",
+      "name": "C1",
+      "residue_id": "1",
+      "residue_name": "BEN",
+      "serial": 1631,
+      "sigma_hole_activated": true,
+      "tetrel_donor_capacity": 0
+    },
+    {
+      "acceptor_capacity": 0,
+      "atom_id": 1631,
+      "bonds": [
+        1630,
+        1632
+      ],
+      "carbon_donor_capacity": 1,
+      "chain_id": "A",
+      "chalcogen_donor_capacity": 0,
+      "component_id": "A:BEN:1",
+      "coord": [
+        -2.107,
+        15.653,
+        16.758
+      ],
+      "donor_capacity": 0,
+      "element": "C",
+      "formal_charge": 0,
+      "halogen_donor_capacity": 0,
+      "hydrogen_count": 1,
+      "is_aromatic": true,
+      "is_hydrophobe": true,
+      "metadata": {
+        "chemistry_source": "smiles",
+        "structure_hydrogen_count": 0,
+        "template_hydrogen_count": 1
+      },
+      "molecule_type": "ligand",
+      "name": "C2",
+      "residue_id": "1",
+      "residue_name": "BEN",
+      "serial": 1632,
+      "sigma_hole_activated": true,
+      "tetrel_donor_capacity": 0
+    },
+    {
+      "acceptor_capacity": 0,
+      "atom_id": 1632,
+      "bonds": [
+        1631,
+        1633
+      ],
+      "carbon_donor_capacity": 1,
+      "chain_id": "A",
+      "chalcogen_donor_capacity": 0,
+      "component_id": "A:BEN:1",
+      "coord": [
+        -1.774,
+        16.341,
+        17.932
+      ],
+      "donor_capacity": 0,
+      "element": "C",
+      "formal_charge": 0,
+      "halogen_donor_capacity": 0,
+      "hydrogen_count": 1,
+      "is_aromatic": true,
+      "is_hydrophobe": true,
+      "metadata": {
+        "chemistry_source": "smiles",
+        "structure_hydrogen_count": 0,
+        "template_hydrogen_count": 1
+      },
+      "molecule_type": "ligand",
+      "name": "C3",
+      "residue_id": "1",
+      "residue_name": "BEN",
+      "serial": 1633,
+      "sigma_hole_activated": true,
+      "tetrel_donor_capacity": 0
+    },
+    {
+      "acceptor_capacity": 0,
+      "atom_id": 1633,
+      "bonds": [
+        1632,
+        1634
+      ],
+      "carbon_donor_capacity": 1,
+      "chain_id": "A",
+      "chalcogen_donor_capacity": 0,
+      "component_id": "A:BEN:1",
+      "coord": [
+        -1.175,
+        15.662,
+        19.005
+      ],
+      "donor_capacity": 0,
+      "element": "C",
+      "formal_charge": 0,
+      "halogen_donor_capacity": 0,
+      "hydrogen_count": 1,
+      "is_aromatic": true,
+      "is_hydrophobe": true,
+      "metadata": {
+        "chemistry_source": "smiles",
+        "structure_hydrogen_count": 0,
+        "template_hydrogen_count": 1
+      },
+      "molecule_type": "ligand",
+      "name": "C4",
+      "residue_id": "1",
+      "residue_name": "BEN",
+      "serial": 1634,
+      "sigma_hole_activated": true,
+      "tetrel_donor_capacity": 0
+    },
+    {
+      "acceptor_capacity": 0,
+      "atom_id": 1634,
+      "bonds": [
+        1633,
+        1635
+      ],
+      "carbon_donor_capacity": 1,
+      "chain_id": "A",
+      "chalcogen_donor_capacity": 0,
+      "component_id": "A:BEN:1",
+      "coord": [
+        -0.914,
+        14.295,
+        18.885
+      ],
+      "donor_capacity": 0,
+      "element": "C",
+      "formal_charge": 0,
+      "halogen_donor_capacity": 0,
+      "hydrogen_count": 1,
+      "is_aromatic": true,
+      "is_hydrophobe": true,
+      "metadata": {
+        "chemistry_source": "smiles",
+        "structure_hydrogen_count": 0,
+        "template_hydrogen_count": 1
+      },
+      "molecule_type": "ligand",
+      "name": "C5",
+      "residue_id": "1",
+      "residue_name": "BEN",
+      "serial": 1635,
+      "sigma_hole_activated": true,
+      "tetrel_donor_capacity": 0
+    },
+    {
+      "acceptor_capacity": 0,
+      "atom_id": 1635,
+      "bonds": [
+        1630,
+        1634
+      ],
+      "carbon_donor_capacity": 1,
+      "chain_id": "A",
+      "chalcogen_donor_capacity": 0,
+      "component_id": "A:BEN:1",
+      "coord": [
+        -1.257,
+        13.634,
+        17.708
+      ],
+      "donor_capacity": 0,
+      "element": "C",
+      "formal_charge": 0,
+      "halogen_donor_capacity": 0,
+      "hydrogen_count": 1,
+      "is_aromatic": true,
+      "is_hydrophobe": true,
+      "metadata": {
+        "chemistry_source": "smiles",
+        "structure_hydrogen_count": 0,
+        "template_hydrogen_count": 1
+      },
+      "molecule_type": "ligand",
+      "name": "C6",
+      "residue_id": "1",
+      "residue_name": "BEN",
+      "serial": 1636,
+      "sigma_hole_activated": true,
+      "tetrel_donor_capacity": 0
+    },
+    {
+      "acceptor_capacity": 0,
+      "atom_id": 1636,
+      "bonds": [
+        1630,
+        1637,
+        1638
+      ],
+      "carbon_donor_capacity": 1,
+      "chain_id": "A",
+      "chalcogen_donor_capacity": 0,
+      "component_id": "A:BEN:1",
+      "coord": [
+        -2.193,
+        13.627,
+        15.496
+      ],
+      "donor_capacity": 0,
+      "element": "C",
+      "formal_charge": 0,
+      "halogen_donor_capacity": 0,
+      "hydrogen_count": 0,
+      "is_aromatic": false,
+      "is_hydrophobe": true,
+      "metadata": {
+        "chemistry_source": "smiles",
+        "structure_hydrogen_count": 0,
+        "template_hydrogen_count": 0
+      },
+      "molecule_type": "ligand",
+      "name": "C",
+      "residue_id": "1",
+      "residue_name": "BEN",
+      "serial": 1637,
+      "sigma_hole_activated": true,
+      "tetrel_donor_capacity": 2
+    },
+    {
+      "acceptor_capacity": 1,
+      "atom_id": 1637,
+      "bonds": [
+        1636
+      ],
+      "carbon_donor_capacity": 0,
+      "chain_id": "A",
+      "chalcogen_donor_capacity": 0,
+      "component_id": "A:BEN:1",
+      "coord": [
+        -2.797,
+        14.235,
+        14.491
+      ],
+      "donor_capacity": 1,
+      "element": "N",
+      "formal_charge": 0,
+      "halogen_donor_capacity": 0,
+      "hydrogen_count": 1,
+      "is_aromatic": false,
+      "is_hydrophobe": false,
+      "metadata": {
+        "chemistry_source": "smiles",
+        "structure_hydrogen_count": 0,
+        "template_hydrogen_count": 1
+      },
+      "molecule_type": "ligand",
+      "name": "N1",
+      "residue_id": "1",
+      "residue_name": "BEN",
+      "serial": 1638,
+      "sigma_hole_activated": true,
+      "tetrel_donor_capacity": 0
+    },
+    {
+      "acceptor_capacity": 1,
+      "atom_id": 1638,
+      "bonds": [
+        1636
+      ],
+      "carbon_donor_capacity": 0,
+      "chain_id": "A",
+      "chalcogen_donor_capacity": 0,
+      "component_id": "A:BEN:1",
+      "coord": [
+        -1.762,
+        12.391,
+        15.309
+      ],
+      "donor_capacity": 1,
+      "element": "N",
+      "formal_charge": 0,
+      "halogen_donor_capacity": 0,
+      "hydrogen_count": 2,
+      "is_aromatic": false,
+      "is_hydrophobe": false,
+      "metadata": {
+        "chemistry_source": "smiles",
+        "structure_hydrogen_count": 0,
+        "template_hydrogen_count": 2
+      },
+      "molecule_type": "ligand",
+      "name": "N2",
+      "residue_id": "1",
+      "residue_name": "BEN",
+      "serial": 1639,
+      "sigma_hole_activated": false,
+      "tetrel_donor_capacity": 0
+    }
+  ],
+  "components": [
+    {
+      "atom_ids": [
+        1245,
+        1246,
+        1247,
+        1248,
+        1249,
+        1250,
+        1251,
+        1252
+      ],
+      "chain_id": "A",
+      "component_id": "A:ASP:189",
+      "metadata": {},
+      "molecule_type": "protein",
+      "name": "ASP",
+      "residue_id": "189"
+    },
+    {
+      "atom_ids": [
+        1253,
+        1254,
+        1255,
+        1256,
+        1257,
+        1258
+      ],
+      "chain_id": "A",
+      "component_id": "A:SER:190",
+      "metadata": {},
+      "molecule_type": "protein",
+      "name": "SER",
+      "residue_id": "190"
+    },
+    {
+      "atom_ids": [
+        1259,
+        1260,
+        1261,
+        1262,
+        1263,
+        1264
+      ],
+      "chain_id": "A",
+      "component_id": "A:CYS:191",
+      "metadata": {},
+      "molecule_type": "protein",
+      "name": "CYS",
+      "residue_id": "191"
+    },
+    {
+      "atom_ids": [
+        1375,
+        1376,
+        1377,
+        1378,
+        1379,
+        1380,
+        1381
+      ],
+      "chain_id": "A",
+      "component_id": "A:VAL:213",
+      "metadata": {},
+      "molecule_type": "protein",
+      "name": "VAL",
+      "residue_id": "213"
+    },
+    {
+      "atom_ids": [
+        1388,
+        1389,
+        1390,
+        1391,
+        1392,
+        1393,
+        1394,
+        1395,
+        1396,
+        1397,
+        1398,
+        1399,
+        1400,
+        1401
+      ],
+      "chain_id": "A",
+      "component_id": "A:TRP:215",
+      "metadata": {},
+      "molecule_type": "protein",
+      "name": "TRP",
+      "residue_id": "215"
+    },
+    {
+      "atom_ids": [
+        1630,
+        1631,
+        1632,
+        1633,
+        1634,
+        1635,
+        1636,
+        1637,
+        1638
+      ],
+      "chain_id": "A",
+      "component_id": "A:BEN:1",
+      "metadata": {
+        "smiles": "[H]N=C(c1ccccc1)N",
+        "template_amides": [],
+        "template_carbonyls": [],
+        "template_mapping": {
+          "0": 1637,
+          "1": 1636,
+          "2": 1630,
+          "3": 1631,
+          "4": 1632,
+          "5": 1633,
+          "6": 1634,
+          "7": 1635,
+          "8": 1638
+        },
+        "template_rings": [
+          [
+            1630,
+            1635,
+            1634,
+            1633,
+            1632,
+            1631
+          ]
+        ],
+        "template_source": "smiles"
+      },
+      "molecule_type": "ligand",
+      "name": "BEN",
+      "residue_id": "1"
+    }
+  ],
+  "features": [
+    {
+      "atom_ids": [
+        1250
+      ],
+      "capacity": 0,
+      "center": [
+        -4.241,
+        11.204,
+        13.24
+      ],
+      "component_id": "A:ASP:189",
+      "feature_id": 2489,
+      "feature_type": "hydrophobe",
+      "metadata": {},
+      "normal": null
+    },
+    {
+      "atom_ids": [
+        1255
+      ],
+      "capacity": 0,
+      "center": [
+        -4.689,
+        11.403,
+        17.229
+      ],
+      "component_id": "A:SER:190",
+      "feature_id": 2498,
+      "feature_type": "hydrophobe",
+      "metadata": {},
+      "normal": null
+    },
+    {
+      "atom_ids": [
+        1260
+      ],
+      "capacity": 0,
+      "center": [
+        -5.214,
+        13.339,
+        18.583
+      ],
+      "component_id": "A:CYS:191",
+      "feature_id": 2508,
+      "feature_type": "hydrophobe",
+      "metadata": {},
+      "normal": null
+    },
+    {
+      "atom_ids": [
+        1380
+      ],
+      "capacity": 0,
+      "center": [
+        0.075,
+        10.897,
+        19.95
+      ],
+      "component_id": "A:VAL:213",
+      "feature_id": 2747,
+      "feature_type": "hydrophobe",
+      "metadata": {},
+      "normal": null
+    },
+    {
+      "atom_ids": [
+        1390
+      ],
+      "capacity": 0,
+      "center": [
+        1.654,
+        15.202,
+        15.337
+      ],
+      "component_id": "A:TRP:215",
+      "feature_id": 2768,
+      "feature_type": "hydrophobe",
+      "metadata": {},
+      "normal": null
+    },
+    {
+      "atom_ids": [
+        1630
+      ],
+      "capacity": 0,
+      "center": [
+        -1.853,
+        14.311,
+        16.658
+      ],
+      "component_id": "A:BEN:1",
+      "feature_id": 3245,
+      "feature_type": "hydrophobe",
+      "metadata": {},
+      "normal": null
+    },
+    {
+      "atom_ids": [
+        1634
+      ],
+      "capacity": 0,
+      "center": [
+        -0.914,
+        14.295,
+        18.885
+      ],
+      "component_id": "A:BEN:1",
+      "feature_id": 3253,
+      "feature_type": "hydrophobe",
+      "metadata": {},
+      "normal": null
+    },
+    {
+      "atom_ids": [
+        1635
+      ],
+      "capacity": 0,
+      "center": [
+        -1.257,
+        13.634,
+        17.708
+      ],
+      "component_id": "A:BEN:1",
+      "feature_id": 3255,
+      "feature_type": "hydrophobe",
+      "metadata": {},
+      "normal": null
+    },
+    {
+      "atom_ids": [
+        1636
+      ],
+      "capacity": 0,
+      "center": [
+        -2.193,
+        13.627,
+        15.496
+      ],
+      "component_id": "A:BEN:1",
+      "feature_id": 3258,
+      "feature_type": "hydrophobe",
+      "metadata": {},
+      "normal": null
+    },
+    {
+      "atom_ids": [
+        1630,
+        1635,
+        1634,
+        1633,
+        1632,
+        1631
+      ],
+      "capacity": 0,
+      "center": [
+        -1.5133333333333334,
+        14.982666666666667,
+        17.824333333333332
+      ],
+      "component_id": "A:BEN:1",
+      "feature_id": 3652,
+      "feature_type": "ring",
+      "metadata": {
+        "aromatic": true,
+        "planarity": 0.001955333446585506,
+        "source": "smiles"
+      },
+      "normal": [
+        0.9034202757521136,
+        0.20332705985382826,
+        -0.3774783597653947
+      ]
+    },
+    {
+      "atom_ids": [
+        1261,
+        1262,
+        1265
+      ],
+      "capacity": 0,
+      "center": [
+        -4.652,
+        14.168,
+        20.246666666666666
+      ],
+      "component_id": "A:CYS:191",
+      "feature_id": 3845,
+      "feature_type": "amide",
+      "metadata": {
+        "carbon_atom_id": 1261,
+        "nitrogen_atom_id": 1265,
+        "oxygen_atom_id": 1262,
+        "planarity": 1.3374753023502555e-08,
+        "source": "protein_backbone"
+      },
+      "normal": [
+        0.8259001665435346,
+        0.31041862897402384,
+        -0.4706688747827381
+      ]
+    },
+    {
+      "atom_ids": [
+        1390,
+        1391,
+        1402
+      ],
+      "capacity": 0,
+      "center": [
+        1.438,
+        15.151333333333334,
+        15.005666666666665
+      ],
+      "component_id": "A:TRP:215",
+      "feature_id": 3865,
+      "feature_type": "amide",
+      "metadata": {
+        "carbon_atom_id": 1390,
+        "nitrogen_atom_id": 1402,
+        "oxygen_atom_id": 1391,
+        "planarity": 8.490728659018567e-09,
+        "source": "protein_backbone"
+      },
+      "normal": [
+        0.7954573626327771,
+        0.24203260442608912,
+        -0.5555787996567461
+      ]
+    }
+  ],
+  "interactions": [
+    {
+      "angle": 9.27761507091122,
+      "assignment_order": 54,
+      "atom_ids": [
+        1261,
+        1262,
+        1265,
+        1630,
+        1631,
+        1632,
+        1633,
+        1634,
+        1635
+      ],
+      "component_ids": [
+        "A:CYS:191",
+        "A:BEN:1"
+      ],
+      "distance": 4.047543576047083,
+      "feature_ids": [
+        3845,
+        3652
+      ],
+      "interaction_type": "amide_pi",
+      "metadata": {
+        "geometry": "parallel"
+      },
+      "offset": 0.7074965376215393,
+      "priority": 100,
+      "resource_demands": [],
+      "stage": "inter"
+    },
+    {
+      "angle": 12.160034507331263,
+      "assignment_order": 55,
+      "atom_ids": [
+        1390,
+        1391,
+        1402,
+        1630,
+        1631,
+        1632,
+        1633,
+        1634,
+        1635
+      ],
+      "component_ids": [
+        "A:TRP:215",
+        "A:BEN:1"
+      ],
+      "distance": 4.084568357448148,
+      "feature_ids": [
+        3865,
+        3652
+      ],
+      "interaction_type": "amide_pi",
+      "metadata": {
+        "geometry": "parallel"
+      },
+      "offset": 1.02265987289479,
+      "priority": 100,
+      "resource_demands": [],
+      "stage": "inter"
+    },
+    {
+      "angle": null,
+      "assignment_order": 297,
+      "atom_ids": [
+        1380,
+        1634
+      ],
+      "component_ids": [
+        "A:VAL:213",
+        "A:BEN:1"
+      ],
+      "distance": 3.695774614340002,
+      "feature_ids": [
+        2747,
+        3253
+      ],
+      "interaction_type": "hydrophobic",
+      "metadata": {},
+      "offset": null,
+      "priority": 140,
+      "resource_demands": [],
+      "stage": "inter"
+    },
+    {
+      "angle": null,
+      "assignment_order": 348,
+      "atom_ids": [
+        1255,
+        1636
+      ],
+      "component_ids": [
+        "A:SER:190",
+        "A:BEN:1"
+      ],
+      "distance": 3.7655651634250065,
+      "feature_ids": [
+        2498,
+        3258
+      ],
+      "interaction_type": "hydrophobic",
+      "metadata": {},
+      "offset": null,
+      "priority": 140,
+      "resource_demands": [],
+      "stage": "inter"
+    },
+    {
+      "angle": null,
+      "assignment_order": 365,
+      "atom_ids": [
+        1380,
+        1635
+      ],
+      "component_ids": [
+        "A:VAL:213",
+        "A:BEN:1"
+      ],
+      "distance": 3.780470473367039,
+      "feature_ids": [
+        2747,
+        3255
+      ],
+      "interaction_type": "hydrophobic",
+      "metadata": {},
+      "offset": null,
+      "priority": 140,
+      "resource_demands": [],
+      "stage": "inter"
+    },
+    {
+      "angle": null,
+      "assignment_order": 450,
+      "atom_ids": [
+        1390,
+        1630
+      ],
+      "component_ids": [
+        "A:TRP:215",
+        "A:BEN:1"
+      ],
+      "distance": 3.8520086967710756,
+      "feature_ids": [
+        2768,
+        3245
+      ],
+      "interaction_type": "hydrophobic",
+      "metadata": {},
+      "offset": null,
+      "priority": 140,
+      "resource_demands": [],
+      "stage": "inter"
+    },
+    {
+      "angle": null,
+      "assignment_order": 490,
+      "atom_ids": [
+        1250,
+        1636
+      ],
+      "component_ids": [
+        "A:ASP:189",
+        "A:BEN:1"
+      ],
+      "distance": 3.892912662775778,
+      "feature_ids": [
+        2489,
+        3258
+      ],
+      "interaction_type": "hydrophobic",
+      "metadata": {},
+      "offset": null,
+      "priority": 140,
+      "resource_demands": [],
+      "stage": "inter"
+    },
+    {
+      "angle": null,
+      "assignment_order": 596,
+      "atom_ids": [
+        1260,
+        1630
+      ],
+      "component_ids": [
+        "A:CYS:191",
+        "A:BEN:1"
+      ],
+      "distance": 3.993335698385498,
+      "feature_ids": [
+        2508,
+        3245
+      ],
+      "interaction_type": "hydrophobic",
+      "metadata": {},
+      "offset": null,
+      "priority": 140,
+      "resource_demands": [],
+      "stage": "inter"
+    }
+  ],
+  "metadata": {
+    "batch_ligand_key": null,
+    "ccd_missing": {},
+    "ccd_smiles_lookup": true,
+    "embedded_smiles_lookup": false,
+    "input_ligand_smiles": {
+      "BEN": "[H]N=C(c1ccccc1)N"
+    },
+    "ligand_chain_id": "A",
+    "ligand_component_id": "A:BEN:1",
+    "ligand_name": "BEN",
+    "ligand_residue_id": "1",
+    "ligand_sdf_paths": [],
+    "ligand_smiles": {
+      "BEN": "[H]N=C(c1ccccc1)N"
+    },
+    "ligand_smiles_keys": [
+      "BEN"
+    ],
+    "protonate": false,
+    "protonate_max_variants": 1,
+    "protonate_ph_max": 7.4,
+    "protonate_ph_min": 7.4,
+    "protonate_precision": 0.0,
+    "rule_overrides": {},
+    "scope": "all",
+    "sdf_input_ligand_smiles": {},
+    "sdf_ligands": [],
+    "sdf_smiles_overrides": [],
+    "skipped_ligands": {},
+    "split_by_ligand": true,
+    "strict_ligand_templates": false,
+    "structure": "./test_data/structures/3PTB.cif",
+    "structure_ligands_included": true,
+    "threads": "auto"
+  },
+  "profile": "default"
+}

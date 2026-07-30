@@ -44,7 +44,6 @@ the source distribution and needs a C++17 compiler and CMake ≥ 3.18.
 
 | Extra | Installs | Enables |
 | --- | --- | --- |
-| `protonation` | `dimorphite_dl` | pH-range ligand protonation (`--protonate`) |
 | `trajectory` | `MDAnalysis` | reading trajectories in `chemur trajectory` |
 | `dataframe` | `pandas` | `AnalysisResult.to_dataframe()` |
 | `all` | all of the above | |
@@ -53,9 +52,14 @@ the source distribution and needs a C++17 compiler and CMake ≥ 3.18.
 pip install "chemur[all]"
 ```
 
-> `MDAnalysis` is GPL-2.0-or-later. Chemur itself is MIT and neither bundles
-> nor links it, but installing the `trajectory` extra produces an environment
-> subject to the GPL.
+pH-range ligand protonation (`--protonate`) needs no extra — `dimorphite_dl` is a
+hard dependency. Note that it requires `rdkit<2026`, so a chemur install is capped
+there too.
+
+> `MDAnalysis` is LGPL-3.0-or-later (it relicensed from GPL at 2.8.0; the `>=2.4`
+> floor still permits older GPL-licensed releases if you pin one). Chemur itself is
+> MIT and neither bundles nor links it, but installing the `trajectory` extra adds
+> copyleft-licensed code to your environment.
 
 ### Verify the compiled core
 

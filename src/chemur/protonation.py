@@ -56,8 +56,9 @@ def _protonate_smiles(
         from dimorphite_dl import protonate_smiles
     except ImportError as exc:
         raise DependencyMissingError(
-            "Dimorphite-DL is required when --protonate is used. Install it with "
-            "`pip install dimorphite_dl` or `pip install -e '.[protonation]'`."
+            "Dimorphite-DL is required when --protonate is used. It is a hard "
+            "dependency of chemur, so reaching this usually means a broken "
+            "environment -- reinstall with `pip install --force-reinstall chemur`."
         ) from exc
 
     try:

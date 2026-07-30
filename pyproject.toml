@@ -38,6 +38,10 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Chemistry",
 ]
 dependencies = [
+  # Apache-2.0 and a 40 KB pure-Python wheel, so --protonate works out of the box.
+  # It does cap the whole install at rdkit <2026 and pulls in loguru; revisit when
+  # dimorphite_dl lifts that bound.
+  "dimorphite_dl>=2",
   "gemmi>=0.6",
   "numpy>=1.23",
   "PyYAML>=6",
@@ -45,7 +49,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-protonation = ["dimorphite_dl>=2"]
+# Empty alias: dimorphite_dl is a hard dependency now, but removing the extra outright
+# would make an existing `pip install chemur[protonation]` warn that it does not exist.
+protonation = []
 trajectory = ["MDAnalysis>=2.4"]
 dataframe = ["pandas>=1.5"]
 all = ["chemur[protonation,trajectory,dataframe]"]
