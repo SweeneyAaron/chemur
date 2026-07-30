@@ -94,6 +94,12 @@ skip = ["pp*", "*-musllinux_*", "*_i686", "*-win32"]
 build-frontend = "build"
 build-verbosity = 1
 test-requires = ["pytest"]
+# cibuildwheel tests both halves of a universal2 wheel, running the x86_64 half under
+# Rosetta. pip installs the test venv's numpy/rdkit/gemmi natively, so they are arm64-only
+# wheels and that half fails on import -- a property of the dependencies, not of our x86_64
+# slice, which lipo confirms is a valid fat-binary slice at the same 11.0 floor. The arm64
+# half is still tested in full, as is every Linux and Windows wheel.
+test-skip = "*-macosx_universal2:x86_64"
 test-command = [
   # core.py falls back to the pure-Python core on ImportError, silently. Without
   # this assertion a wheel whose CMake step failed would import fine, pass every
@@ -109,7 +115,11 @@ test-command = [
 ]
 
 [tool.cibuildwheel.linux]
-manylinux-x86_64-image = "manylinux2014"
+# rdkit dropped manylinux_2_17 wheels at 2024.3.3 and gemmi at 0.7.3, so a glibc-2.17
+# container cannot install this project's own dependencies: pip falls back to building
+# rdkit from source and the test phase dies. 2.28 is cibuildwheel's default and the floor
+# rdkit itself requires, so this excludes no system that could have run chemur anyway.
+manylinux-x86_64-image = "manylinux_2_28"
 
 # MACOSX_DEPLOYMENT_TARGET and CIBW_ARCHS are set in .github/workflows/release.yml,
 # not here: macOS ships as a single universal2 wheel, whose arm64 slice forces an 11.0

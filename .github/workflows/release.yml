@@ -25,9 +25,9 @@ jobs:
           # runner, and the replacements (macos-15-intel / *-large) are larger runners,
           # which are billed even on public repositories. universal2 keeps Intel Macs
           # on a binary wheel for free -- ChimeraX's bundled Python accepts the
-          # macosx_11_0_universal2 tag on both architectures. The x86_64 slice is
-          # therefore built but not executed in CI; the core is header-only STL, so
-          # there is no arch-specific native dependency to go wrong.
+          # macosx_11_0_universal2 tag on both architectures. The x86_64 slice is built
+          # but never executed: see test-skip in pyproject.toml, which exists because the
+          # test venv's dependencies are arm64-only and cannot import under Rosetta.
           - { os: macos-15, archs: universal2, deploy: "11.0" }
           - { os: windows-latest, archs: AMD64, deploy: "" }
     steps:
