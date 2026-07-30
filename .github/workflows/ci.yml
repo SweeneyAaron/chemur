@@ -17,12 +17,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-14, windows-latest]
+        # macos-15 is the current free arm64 runner. There is deliberately no Intel
+        # macOS cell: GitHub retired macos-13, and the Intel replacements are billed
+        # larger runners. Intel Macs are covered at release time by a universal2 wheel
+        # cross-compiled here -- see the comment in release.yml.
+        os: [ubuntu-latest, macos-15, windows-latest]
         python-version: ["3.10", "3.11", "3.12", "3.13"]
-        include:
-          # One Intel-macOS cell; the rest of that matrix is covered at release time.
-          - os: macos-13
-            python-version: "3.11"
     steps:
       - uses: actions/checkout@v4
 

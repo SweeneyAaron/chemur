@@ -111,5 +111,6 @@ test-command = [
 [tool.cibuildwheel.linux]
 manylinux-x86_64-image = "manylinux2014"
 
-# MACOSX_DEPLOYMENT_TARGET is set per-arch in .github/workflows/release.yml,
-# not here: 10.13 is a valid floor for x86_64 but illegal on arm64 (min 11.0).
+# MACOSX_DEPLOYMENT_TARGET and CIBW_ARCHS are set in .github/workflows/release.yml,
+# not here: macOS ships as a single universal2 wheel, whose arm64 slice forces an 11.0
+# floor, while Linux and Windows take no deployment target at all.
