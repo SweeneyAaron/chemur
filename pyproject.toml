@@ -5,7 +5,7 @@ build-backend = "scikit_build_core.build"
 [project]
 name = "chemur"
 version = "0.1.0"
-description = "Biomolecular interaction detection and docked-pose rescoring, with a Python API, a CLI, and a C++ geometry core."
+description = "Detect non-covalent interactions between proteins, nucleic acids, ligands and metals in PDB/mmCIF structures, with a Python API, a CLI, and a C++ geometry core."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -14,11 +14,11 @@ authors = [{ name = "Aaron Sweeney", email = "ucbtasw@ucl.ac.uk" }]
 maintainers = [{ name = "Aaron Sweeney", email = "ucbtasw@ucl.ac.uk" }]
 keywords = [
   "structural-biology",
-  "protein-ligand",
   "molecular-interactions",
+  "protein-ligand",
+  "protein-protein",
+  "nucleic-acids",
   "hydrogen-bond",
-  "docking",
-  "rescoring",
   "cheminformatics",
   "mmcif",
 ]
