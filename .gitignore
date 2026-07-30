@@ -24,3 +24,6 @@ htmlcov/
 
 # Manuscript material lives outside the repo (~/Documents/chemur_paper)
 paper/
+
+# Default --split-by-ligand-dir for `chemur analyze`; generated output, never source.
+ligand_outputs/

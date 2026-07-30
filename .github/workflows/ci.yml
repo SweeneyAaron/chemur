@@ -90,7 +90,9 @@ jobs:
       - name: sdist must not contain junk
         run: |
           tar tzf dist/*.tar.gz > sdist.txt
-          ! grep -Eq 'DS_Store|/paper/|/wheels/|/test_data/|\.whl$|chimerax-' sdist.txt
+          # ligand_outputs/ is the default --split-by-ligand-dir, so running the CLI in a
+          # working tree creates it; it once reached the sdist that way.
+          ! grep -Eq 'DS_Store|/paper/|/wheels/|/test_data/|/ligand_outputs/|\.whl$|chimerax-' sdist.txt
 
       - name: sdist must contain what the build needs
         run: |
