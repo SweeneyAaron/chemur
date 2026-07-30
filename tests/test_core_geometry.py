@@ -57,6 +57,22 @@ def test_distance_angle_and_neighbor_pairs():
     assert pairs == [(0, 1, 0.5)]
 
 
+def test_coordinate_returns_are_hashable_tuples():
+    """The C++ and pure-Python cores must return the same types, not just the same numbers.
+
+    pybind11 casts std::array to a list by default, which silently made the C++ core
+    return lists where _fallback_core returns tuples. These values land on every
+    FeatureRecord, so the mismatch made otherwise-identical results compare unequal
+    across the two cores -- and unhashable under the C++ one.
+    """
+    ring = _ring(1.39, 0.0)
+
+    for value in (core.centroid(ring), core.plane_normal(ring), core.plane_fit(ring)[0]):
+        assert isinstance(value, tuple), f"expected tuple, got {type(value).__name__}"
+        assert len(value) == 3
+        hash(value)
+
+
 def test_occlusion():
     assert core.is_occluded(
         (0.0, 0.0, 0.0),

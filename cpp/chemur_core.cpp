@@ -319,13 +319,38 @@ bool is_occluded_py(
     return is_occluded(start, end, points, ignore, radius);
 }
 
+// pybind11 casts std::array to a Python *list*, but _fallback_core returns tuples.
+// The two cores have to be interchangeable -- these coordinates end up on every
+// FeatureRecord (features.py), so a list would make results built by the C++ core
+// compare unequal to the same results built by the Python core, and would raise on
+// any attempt to hash them. Convert at the binding boundary and leave the C++
+// signatures natural.
+static py::tuple vec3_to_tuple(const Vec3& v) {
+    return py::make_tuple(v[0], v[1], v[2]);
+}
+
 PYBIND11_MODULE(_chemur_core, m) {
     m.doc() = "C++ geometry and neighbor-search core for standalone Chemur";
     m.def("distance", &distance, py::arg("a"), py::arg("b"));
     m.def("angle", &angle, py::arg("a"), py::arg("b"), py::arg("c"));
-    m.def("centroid", &centroid, py::arg("points"));
-    m.def("plane_normal", &plane_normal, py::arg("points"));
-    m.def("plane_fit", &plane_fit, py::arg("points"));
+    m.def(
+        "centroid",
+        [](const std::vector<Vec3>& points) { return vec3_to_tuple(centroid(points)); },
+        py::arg("points")
+    );
+    m.def(
+        "plane_normal",
+        [](const std::vector<Vec3>& points) { return vec3_to_tuple(plane_normal(points)); },
+        py::arg("points")
+    );
+    m.def(
+        "plane_fit",
+        [](const std::vector<Vec3>& points) {
+            const auto fit = plane_fit(points);
+            return py::make_tuple(vec3_to_tuple(std::get<0>(fit)), std::get<1>(fit));
+        },
+        py::arg("points")
+    );
     m.def("point_plane_offset", &point_plane_offset, py::arg("point"), py::arg("center"), py::arg("normal"));
     m.def("neighbor_pairs", &neighbor_pairs, py::arg("coords"), py::arg("cutoff"));
     m.def(

@@ -21,3 +21,6 @@ venv/
 .vscode/
 .coverage
 htmlcov/
+
+# Manuscript material lives outside the repo (~/Documents/chemur_paper)
+paper/

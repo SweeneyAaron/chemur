@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import sys
 
+from . import __version__
 from .api import analyze, analyze_batch
 from .core import USING_CPP_CORE
 from .interaction_types import CUTOFF_HELP, INTERACTION_TYPES
@@ -34,6 +35,9 @@ RULE_CUTOFF_FLAGS = _rule_cutoff_flags()
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="chemur")
+    # Reported in bug reports; also the quickest way for a user to tell whether the
+    # ChimeraX bundle picked up the version of chemur it expects.
+    parser.add_argument("--version", action="version", version=f"chemur {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     analyze_parser = subparsers.add_parser("analyze", help="Analyze biomolecular interactions")
