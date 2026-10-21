@@ -11,6 +11,7 @@ import warnings as py_warnings
 
 from .ifm_config import CANONICAL_FAMILIES, IFMConfig, load_ifm_config
 from .interaction_types import STACKING_TYPES as _STACKING_TYPES, canonical_family
+from .interaction_projection import project_interactions_for_scoring
 from .ifm_models import (
     BatchMatchResult,
     FingerprintComplex,
@@ -20,11 +21,13 @@ from .ifm_models import (
 )
 from .ifm_scoring import (
     extra_penalty,
+    matching_subtype,
     missing_penalty,
     normalized_similarity,
     score_interaction_pair,
 )
 from .models import AnalysisResult
+from .ligand_selection import ligand_selections, resolve_ligand
 
 VALID_MODES = {"protein", "ligand", "hybrid"}
 VALID_STRICTNESS = {"strict", "relaxed", "both"}
@@ -32,6 +35,7 @@ VALID_IFM_ENGINES = {"auto", "cpp", "python"}
 
 _FAMILY_ORDER = {family: index for index, family in enumerate(CANONICAL_FAMILIES)}
 _SUPPORTED_SUBTYPES = {
+    "hydrophobic_enclosure",
     "backbone_hbond",
     "sidechain_hbond",
     "base_edge_hbond",
@@ -404,7 +408,7 @@ def _protein_scoring_record(
     return _ProteinScoringRecord(
         sort_rank=sort_rank,
         family_code=_code_value(codebook, record.interaction_family),
-        subtype_code=_optional_code(codebook, record.interaction_subtype),
+        subtype_code=_optional_code(codebook, matching_subtype(record)),
         target_id_code=_code_value(codebook, record.target_entity_id),
         target_kind_code=_code_value(codebook, record.target_entity_kind),
         target_moiety_code=_code_value(codebook, record.target_moiety),
@@ -1693,6 +1697,7 @@ def _complex_from_analysis_payload(
     metadata = dict(payload.get("metadata") or {})
     ligand_id = (
         payload.get("ligand_id")
+        or metadata.get("ligand_assembly_id")
         or metadata.get("ligand_component_id")
         or _single_ligand_component_id(payload)
         or default_ligand_id
@@ -1700,6 +1705,10 @@ def _complex_from_analysis_payload(
     if ligand_id is None:
         raise ValueError("Could not infer ligand_id for IFM complex")
     ligand_id = str(ligand_id)
+    try:
+        ligand_id = resolve_ligand(payload, ligand_id).ligand_id
+    except ValueError:
+        pass  # Retain handling of legacy/custom payload identifiers.
     target_id = str(payload.get("target_id") or metadata.get("structure") or "target")
     warnings: list[str] = []
     records = _canonical_records_from_analysis_payload(
@@ -1782,15 +1791,23 @@ def _canonical_records_from_analysis_payload(
         for feature in payload.get("features", [])
         if "feature_id" in feature
     }
+    try:
+        selection = resolve_ligand(payload, ligand_id)
+    except ValueError:
+        return []
+    ligand_ids = set(selection.atom_ids)
     records: list[InteractionRecord] = []
-    for index, interaction in enumerate(payload.get("interactions", []), start=1):
+    interactions = project_interactions_for_scoring(payload.get("interactions", []))
+    for index, interaction in enumerate(interactions, start=1):
         component_ids = tuple(str(value) for value in interaction.get("component_ids", ()))
-        if ligand_id not in component_ids:
+        if (not selection.touches(interaction, external=True)
+                or selection.has_boundary_feature(interaction, features_by_id)):
             continue
         target_component_id = _choose_target_component_id(
             component_ids,
             ligand_id=ligand_id,
             components_by_id=components_by_id,
+            ligand_component_ids=set(selection.component_ids),
         )
         if target_component_id is None:
             continue
@@ -1806,7 +1823,7 @@ def _canonical_records_from_analysis_payload(
         ligand_atom_ids = tuple(
             atom_id
             for atom_id in atom_ids
-            if atoms_by_id.get(atom_id, {}).get("component_id") == ligand_id
+            if atom_id in ligand_ids
         )
         target_atom_ids = tuple(
             atom_id
@@ -1828,13 +1845,18 @@ def _canonical_records_from_analysis_payload(
         ligand_feature_ids = [
             str(feature_id)
             for feature_id in feature_ids
-            if features_by_id.get(feature_id, {}).get("component_id") == ligand_id
+            if selection.owns_feature(features_by_id.get(feature_id, {}))
         ]
         ligand_feature_id = "+".join(ligand_feature_ids) if ligand_feature_ids else None
         assignment_order = interaction.get("assignment_order", index)
+        interaction_id = f"{ligand_id}:{assignment_order}"
+        source_metadata = interaction.get("metadata") or {}
+        enclosure_pair = source_metadata.get("enclosure_leg_atom_ids")
+        if enclosure_pair:
+            interaction_id += ":enclosure:" + ":".join(str(atom_id) for atom_id in enclosure_pair)
         records.append(
             InteractionRecord(
-                interaction_id=f"{ligand_id}:{assignment_order}",
+                interaction_id=interaction_id,
                 ligand_id=ligand_id,
                 target_id=target_id,
                 interaction_family=family,
@@ -1865,7 +1887,11 @@ def _canonical_records_from_analysis_payload(
                 priority=str((interaction.get("metadata") or {}).get("ifm_priority", "optional")),
                 target_entity_class=_target_entity_class(target_component),
                 source_interaction_type=raw_type,
-                metadata={"source_priority": interaction.get("priority")},
+                metadata={
+                    "source_priority": interaction.get("priority"),
+                    **({key: value for key, value in source_metadata.items()
+                        if key.startswith("enclosure_")} if enclosure_pair else {}),
+                },
             )
         )
     return sorted(records, key=lambda record: record.sort_key())
@@ -1877,8 +1903,12 @@ def _ligand_features_from_analysis_payload(
     ligand_id: str,
 ) -> list[LigandFeature]:
     features: list[LigandFeature] = []
+    try:
+        selection = resolve_ligand(payload, ligand_id)
+    except ValueError:
+        return features
     for feature in payload.get("features", []):
-        if feature.get("component_id") != ligand_id:
+        if not selection.owns_feature(feature):
             continue
         features.append(
             LigandFeature(
@@ -1952,8 +1982,11 @@ def _choose_target_component_id(
     *,
     ligand_id: str,
     components_by_id: dict[str, dict[str, Any]],
+    ligand_component_ids: set[str] | None = None,
 ) -> str | None:
-    candidates = [component_id for component_id in component_ids if component_id != ligand_id]
+    ligand_components = ligand_component_ids or {ligand_id}
+    candidates = [component_id for component_id in component_ids
+                  if component_id not in ligand_components]
     if not candidates:
         return None
     priority = {"protein": 0, "nucleotide": 1, "ion": 2, "solvent": 3}
@@ -2067,32 +2100,27 @@ def _directionality(
     ligand_atom_ids: set[int],
     target_atom_ids: set[int],
 ) -> dict[str, bool]:
-    ligand_is_donor = False
-    target_is_donor = False
-    for demand in interaction.get("resource_demands", ()):
-        resource_type = str(demand.get("resource_type") if isinstance(demand, dict) else demand.resource_type)
-        atom_id = int(demand.get("atom_id") if isinstance(demand, dict) else demand.atom_id)
-        if resource_type not in {"donor", "halogen_donor"}:
-            continue
-        if atom_id in ligand_atom_ids:
-            ligand_is_donor = True
-        if atom_id in target_atom_ids:
-            target_is_donor = True
+    metadata = interaction.get("metadata") or {}
+    if interaction.get("interaction_type") == "solvent_bridge" and "leg_donor_atom_ids" in metadata:
+        donor_atom_ids = {int(atom_id) for atom_id in metadata["leg_donor_atom_ids"]}
+    else:
+        # Historical bridges encoded their constituent donor roles as demands.
+        donor_atom_ids = set()
+        for demand in interaction.get("resource_demands", ()):
+            resource_type = str(demand.get("resource_type") if isinstance(demand, dict) else demand.resource_type)
+            atom_id = int(demand.get("atom_id") if isinstance(demand, dict) else demand.atom_id)
+            if resource_type in {"donor", "halogen_donor"}:
+                donor_atom_ids.add(atom_id)
     return {
-        "ligand_is_donor": ligand_is_donor,
-        "target_is_donor": target_is_donor,
+        "ligand_is_donor": bool(donor_atom_ids & ligand_atom_ids),
+        "target_is_donor": bool(donor_atom_ids & target_atom_ids),
     }
 
 
 def _single_ligand_component_id(payload: dict[str, Any]) -> str | None:
-    ligand_components = [
-        str(component["component_id"])
-        for component in payload.get("components", [])
-        if component.get("molecule_type") == "ligand"
-        and not (component.get("metadata") or {}).get("ignored_by_template")
-    ]
-    if len(ligand_components) == 1:
-        return ligand_components[0]
+    selections = ligand_selections(payload)
+    if len(selections) == 1:
+        return selections[0].ligand_id
     return None
 
 

@@ -1,33 +1,24 @@
+# Geometry endpoints, scope and references are described by chemur.geometry_catalogue.
 name: default
 neighbor_cutoff: 6.0
 occlusion_radius: 1.0
 occlusion_include_multi_atom: true
-
 assignment:
   intra_before_inter: true
-
-# Angle conventions differ by interaction class, matching how each is defined in
-# the literature:
-#   - directional donor rules (hbond, halogen/chalcogen/tetrel) treat `angle` as a
-#     MINIMUM: the donor must point at the acceptor.
-#   - pi rules treat `angle` as a MAXIMUM: the partner must sit over the ring face.
-# `min_angle` is always a lower bound, whichever class the rule belongs to.
 rules:
   metal_coordination:
     priority: 10
-    distance: 3.0
+    distance: 2.6
     consume:
       acceptor: 1
+    min_distance: 1.7
+    alkali_min_distance: 2.0
+    alkali_distance: 2.9
   salt_bridge:
     priority: 20
-    distance: 4.5
+    distance: 4.0
   amide_bridge:
     priority: 25
-    distance: 3.3
-    angle: 120.0
-    # A backbone amide feature spans residues i and i+1, so consecutive peptide units
-    # overlap and always sit at a short N...O distance. Without this they were the only
-    # thing the rule ever found, and all of it was chain-local artefact.
     min_residue_separation: 2
     consume:
       donor: 1
@@ -36,51 +27,44 @@ rules:
     priority: 30
     distance: 3.5
     angle: 120.0
-    # Sulfur is larger and its H-bonds are longer than the N/O case: the paper
-    # reports d(S...A) ~ 3.5 A with theta ~ 140 deg, which a flat 3.5 A truncates.
-    sulfur_distance: 4.0
-    # Below this the bond enters the short/low-barrier regime (paper: < 2.7 A,
-    # optimum 2.4-2.6 A). Flagged in metadata, not a separate interaction type.
-    short_distance: 2.7
     consume:
       donor: 1
       acceptor: 1
+    min_distance: 2.4
+    hydrogen_min_distance: 1.5
+    hydrogen_distance: 2.5
+    acceptor_angle: 90.0
+    water_distance: 3.5
+    water_angle: 120.0
   solvent_bridge:
     priority: 40
     distance: 3.5
-    consume:
-      donor: 1
-      acceptor: 1
+    consume: {}
   weak_hbond:
     priority: 50
-    distance: 4.0
-    angle: 90.0
+    distance: 3.6
+    angle: 130.0
     consume:
       donor: 1
       acceptor: 1
   pipi_stack:
     priority: 60
-    distance: 6.0
-    angle: 45.0
-    offset: 3.0
-    require_aromatic: true
-  aliphatic_pi_stack:
-    priority: 65
     distance: 5.5
     angle: 30.0
     offset: 2.0
+    require_aromatic: true
+    min_perpendicular_angle: 60.0
+  aliphatic_pi_stack:
+    priority: 65
+    distance: 7.0
+    angle: 10.0
+    plane_separation: 5.0
   cation_pi:
     priority: 70
-    distance: 5.0
-    angle: 45.0
-    offset: 3.0
+    distance: 6.0
+    offset: 2.0
     require_aromatic: true
-  anion_pi:
-    priority: 80
-    distance: 5.0
-    angle: 45.0
-    offset: 3.0
-    require_aromatic: true
+    tertiary_amine_angle: 30.0
   anion_aromatic_edge:
     priority: 85
     distance: 4.5
@@ -88,89 +72,84 @@ rules:
     min_offset: 1.5
     offset: 4.5
     require_aromatic: true
+    enabled: false
   hbond_pi:
     priority: 90
-    distance: 4.5
     angle: 40.0
-    donor_angle: 90.0
-    offset: 3.0
+    donor_angle: 100.0
     require_aromatic: true
     consume:
       donor: 1
+    hydrogen_distance: 3.5
   n_pi_star:
     priority: 95
-    distance: 3.22
+    distance: 3.2
     min_angle: 99.0
     angle: 119.0
-    approach_angle: 60.0
-    # An ASP/ASN side chain reaches its own backbone carbonyl within the Burgi-Dunitz
-    # window because they are three bonds apart, not because they interact. Requiring
-    # different residues keeps the canonical O(i)->C(i+1) case and drops those.
     min_residue_separation: 1
   amide_pi:
     priority: 100
-    distance: 4.5
-    angle: 40.0
-    offset: 3.0
+    distance: 6.0
+    angle: 30.0
     require_aromatic: true
+    approach_angle: 30.0
   halogen_bond:
     priority: 110
-    distance: 4.1
-    angle: 100.0
+    distance: 4.0
+    angle: 135.0
     consume:
       halogen_donor: 1
       acceptor: 1
+    acceptor_min_angle: 90.0
+    acceptor_angle: 150.0
   chalcogen_bond:
     priority: 115
-    # Paper: the most common d(S...O) is 3.6 A. The angle is the R-Ch...A sigma-hole
-    # angle; requiring >= 140 deg also confines the acceptor to within 40 deg of the
-    # R1-Ch-R2 plane, which is what separates the sigma-hole from the lone-pair belt
-    # (i.e. from the chalcogen simply acting as an H-bond acceptor). The elevation
-    # is recorded in metadata but needs no cutoff of its own -- any value it could
-    # take is already implied by this angle.
-    distance: 3.6
-    angle: 140.0
-    # Geometry cannot tell whether the sigma-hole is positive at all: at the C-S
-    # extension of an ordinary MET or CYS the potential is negative, so there is
-    # nothing to donate into. Require the donor to be activated -- aromatic, bonded
-    # to N/O/halogen, cationic, or a thioamide/thiourea. Set false for pure geometry.
-    require_activated_sigma_hole: true
+    angle: 130.0
     consume:
       chalcogen_donor: 1
       acceptor: 1
+    s_o_min_distance: 2.0
+    s_o_distance: 3.32
+    se_o_min_distance: 2.0
+    se_o_distance: 3.42
+    se_s_min_distance: 2.5
+    se_s_distance: 4.07
   halogen_pi:
     priority: 120
     distance: 6.0
-    offset: 3.0
     require_aromatic: true
     consume:
       halogen_donor: 1
+    donor_angle: 90.0
   chalcogen_pi:
     priority: 122
-    distance: 5.5
-    angle: 45.0
-    offset: 2.5
+    distance: 7.0
+    angle: 60.0
     require_aromatic: true
-    consume:
-      chalcogen_donor: 1
+    consume: {}
+    directional_distance: 3.8
+    directional_angle: 155.0
   tetrel_bond:
     priority: 125
     min_distance: 2.5
     distance: 3.6
     angle: 160.0
-    hydrogen_angle: 60.0
     consume:
       tetrel_donor: 1
       acceptor: 1
+    acceptor_angle: 160.0
   ch_pi:
     priority: 130
-    distance: 5.0
     angle: 40.0
-    donor_angle: 90.0
-    offset: 3.0
+    donor_angle: 100.0
     require_aromatic: true
     consume:
       carbon_donor: 1
+    hydrogen_distance: 3.5
+  hydrophobic_enclosure:
+    priority: 135
+    enabled: true
+    consume: {}
   hydrophobic:
     priority: 140
     distance: 4.0
@@ -179,6 +158,4 @@ rules:
     distance: 5.5
     angle: 30.0
     offset: 2.0
-    # Saturated ring pairs are the weakest of the stacking geometries and overlap
-    # heavily with plain hydrophobic contact; opt in rather than pay for it always.
     enabled: false

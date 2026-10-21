@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from math import acos, degrees, sqrt
+from math import acos, degrees, isfinite, sqrt
 from typing import Callable, Iterable
 
-from .core import angle as geom_angle
-from .core import distance, is_occluded, neighbor_pairs, point_plane_offset
+from .core import distance, is_enclosed, is_occluded, neighbor_pairs, point_plane_offset
 from .interaction_types import INTERACTION_TYPES
 from .models import AtomRecord, CandidateInteraction, FeatureRecord, ResourceDemand
 
 Vec3 = tuple[float, float, float]
+
+# Capability marker for clients that must reject older same-version engine builds.
+HYDROPHOBIC_ENDPOINT_HYDROGEN_EXEMPTION = True
 
 
 @dataclass(slots=True)
@@ -60,8 +62,8 @@ def generate_candidates(
     )
 
     rules = profile.get("rules", {})
-    # Two passes: second-order rules (solvent bridges) are built from the
-    # first-order candidates, so they cannot run until those exist.
+    # Constituent contacts must pass every geometry check, including occlusion, before
+    # they can form a second-order candidate.
     for second_order in (False, True):
         for interaction in INTERACTION_TYPES:
             if _is_second_order(interaction.name) != second_order:
@@ -73,15 +75,18 @@ def generate_candidates(
             if detector is None:
                 continue
             context.candidates.extend(detector(context, rule))
+        if not second_order:
+            _with_covalent_neighborhood_rejections(context.candidates, atoms, features)
+            _with_occlusion_rejections(context.candidates, atoms, features, profile)
 
-    return _with_occlusion_rejections(context.candidates, atoms, features, profile)
+    return context.candidates
 
 
 def _is_second_order(name: str) -> bool:
     return name in _SECOND_ORDER_RULES
 
 
-_SECOND_ORDER_RULES = {"solvent_bridge"}
+_SECOND_ORDER_RULES = {"amide_bridge", "solvent_bridge", "hydrophobic_enclosure"}
 
 
 # --------------------------------------------------------------------------
@@ -90,54 +95,33 @@ _SECOND_ORDER_RULES = {"solvent_bridge"}
 
 
 def _hbond_candidates(context: DetectorContext, rule: dict) -> list[CandidateInteraction]:
-    candidates: list[CandidateInteraction] = []
-    sulfur_distance = float(rule.get("sulfur_distance", rule["distance"]))
-    short_distance = float(rule.get("short_distance", 0.0))
-
+    candidates = []
     for donor in context.features("donor"):
         donor_atom = context.atoms_by_id[donor.atom_ids[0]]
         if donor_atom.element not in {"N", "O", "S", "Se"}:
             continue
         for acceptor in context.features("acceptor"):
-            acceptor_atom_id = acceptor.atom_ids[0]
-            if donor.atom_ids[0] == acceptor_atom_id:
+            acceptor_atom = context.atoms_by_id[acceptor.atom_ids[0]]
+            if donor_atom.atom_id == acceptor_atom.atom_id or acceptor_atom.element not in {"N", "O", "S", "Se"}:
                 continue
-            acceptor_atom = context.atoms_by_id[acceptor_atom_id]
-            if acceptor_atom.element not in {"N", "O", "S", "Se"}:
-                continue
-
-            # Sulfur H-bonds are longer than the N/O case, so the cutoff follows
-            # the heavier partner rather than truncating them at the N/O distance.
-            cutoff = (
-                sulfur_distance
-                if "S" in {donor_atom.element, acceptor_atom.element}
-                or "Se" in {donor_atom.element, acceptor_atom.element}
-                else float(rule["distance"])
-            )
+            water = "solvent" in {donor_atom.molecule_type, acceptor_atom.molecule_type}
             dist = distance(donor.center, acceptor.center)
-            if dist > cutoff:
+            lower = 0.0 if water else float(rule["min_distance"])
+            upper = float(rule["water_distance"] if water else rule["distance"])
+            if not lower <= dist <= upper:
                 continue
-
-            candidate = _candidate(
-                "hbond",
-                donor,
-                acceptor,
-                dist,
-                rule,
-                (
-                    ResourceDemand("donor", donor.atom_ids[0]),
-                    ResourceDemand("acceptor", acceptor_atom_id),
-                ),
-            )
-            if short_distance and dist < short_distance:
-                # A short, near-symmetric H-bond is the low-barrier regime. Recorded
-                # as a property of the bond rather than a separate interaction type,
-                # because the geometry is identical and only the length differs.
-                candidate.metadata["short_strong"] = True
-                candidate.metadata["interaction_subtype"] = "low_barrier"
-            _set_donor_angle(
-                candidate, donor_atom, acceptor.center, context.atoms_by_id, rule["angle"]
-            )
+            candidate = _candidate("hbond", donor, acceptor, dist, rule, (
+                ResourceDemand("donor", donor_atom.atom_id),
+                ResourceDemand("acceptor", acceptor_atom.atom_id),
+            ))
+            if water:
+                # Preserve the existing explicit-H water-leg definition.
+                _set_donor_angle(candidate, donor_atom, acceptor.center, context.atoms_by_id, rule["water_angle"])
+            else:
+                _set_hydrogen_geometry(candidate, donor_atom, acceptor.center, context.atoms_by_id,
+                    min_angle=float(rule["angle"]), hydrogen_min_distance=float(rule["hydrogen_min_distance"]),
+                    hydrogen_distance=float(rule["hydrogen_distance"]), acceptor_atom=acceptor_atom,
+                    acceptor_min_angle=float(rule["acceptor_angle"]))
             candidates.append(candidate)
     return candidates
 
@@ -150,7 +134,7 @@ def _weak_hbond_candidates(context: DetectorContext, rule: dict) -> list[Candida
             acceptor_atom_id = acceptor.atom_ids[0]
             if donor.atom_ids[0] == acceptor_atom_id:
                 continue
-            if context.atoms_by_id[acceptor_atom_id].element not in {"N", "O", "S", "Se"}:
+            if context.atoms_by_id[acceptor_atom_id].element != "O":
                 continue
             dist = distance(donor.center, acceptor.center)
             if dist > rule["distance"]:
@@ -165,58 +149,52 @@ def _weak_hbond_candidates(context: DetectorContext, rule: dict) -> list[Candida
                     ResourceDemand("carbon_donor", donor.atom_ids[0]),
                     ResourceDemand("acceptor", acceptor_atom_id),
                 ),
+                metadata={"weak_hbond_activated": donor_atom.weak_hbond_activated},
             )
             _set_donor_angle(
                 candidate, donor_atom, acceptor.center, context.atoms_by_id, rule["angle"]
             )
+            if candidate.rejection_reason is None and not donor_atom.weak_hbond_activated:
+                # Keep geometrically valid contacts in the raw diagnostics, but
+                # leave their donor/acceptor capacity available for other rules.
+                candidate.rejection_reason = "carbon_not_activated"
             candidates.append(candidate)
     return candidates
 
 
 def _amide_bridge_candidates(context: DetectorContext, rule: dict) -> list[CandidateInteraction]:
-    """Reciprocal amide-amide pair: N-H...O=C running in both directions.
-
-    This is the beta-sheet-like double hydrogen bond, and it is a single event
-    rather than two independent bonds -- hence its own type, and a priority above
-    ``hbond`` so it claims both amides before they are consumed one leg at a time.
-    """
+    """Two independently valid reciprocal hydrogen bonds between amide groups."""
     amides = context.features("amide")
-    cutoff = float(rule["distance"])
-    candidates: list[CandidateInteraction] = []
-
-    separation = int(rule.get("min_residue_separation", 2))
+    if len(amides) < 2:
+        return []
+    leg_candidates = [c for c in context.candidates if c.interaction_type == "hbond"]
+    if not leg_candidates:
+        # A separately enabled amide rule still uses the same hydrogen-bond definition.
+        leg_candidates = _hbond_candidates(context, context.profile["rules"]["hbond"])
+        atoms = list(context.atoms_by_id.values())
+        features = [f for group in context.features_by_type.values() for f in group]
+        _with_covalent_neighborhood_rejections(leg_candidates, atoms, features)
+        _with_occlusion_rejections(leg_candidates, atoms, features, context.profile)
+    valid = {(c.resource_demands[0].atom_id, c.resource_demands[1].atom_id): c
+             for c in leg_candidates if not c.rejection_reason}
+    candidates = []
     for index, first in enumerate(amides):
-        for second in amides[index + 1 :]:
-            if first.component_id == second.component_id:
+        for second in amides[index + 1:]:
+            if _same_feature_entity(first, second) or not _amides_are_far_enough_apart(
+                    first, second, context, int(rule.get("min_residue_separation", 2))):
                 continue
-            if not _amides_are_far_enough_apart(first, second, context, separation):
+            forward = valid.get((first.metadata["nitrogen_atom_id"], second.metadata["oxygen_atom_id"]))
+            reverse = valid.get((second.metadata["nitrogen_atom_id"], first.metadata["oxygen_atom_id"]))
+            if forward is None or reverse is None:
                 continue
-            forward = distance(
-                context.atoms_by_id[first.metadata["nitrogen_atom_id"]].coord,
-                context.atoms_by_id[second.metadata["oxygen_atom_id"]].coord,
-            )
-            reverse = distance(
-                context.atoms_by_id[second.metadata["nitrogen_atom_id"]].coord,
-                context.atoms_by_id[first.metadata["oxygen_atom_id"]].coord,
-            )
-            if forward > cutoff or reverse > cutoff:
-                continue
-
-            candidate = _candidate(
-                "amide_bridge",
-                first,
-                second,
-                (forward + reverse) / 2.0,
-                rule,
-                (
-                    ResourceDemand("donor", first.metadata["nitrogen_atom_id"]),
-                    ResourceDemand("acceptor", second.metadata["oxygen_atom_id"]),
-                    ResourceDemand("donor", second.metadata["nitrogen_atom_id"]),
-                    ResourceDemand("acceptor", first.metadata["oxygen_atom_id"]),
-                ),
-                metadata={"forward_distance": forward, "reverse_distance": reverse},
-            )
-            _set_reciprocal_amide_angles(candidate, first, second, context, rule["angle"])
+            candidate = _candidate("amide_bridge", first, second,
+                (forward.distance + reverse.distance) / 2.0, rule,
+                forward.resource_demands + reverse.resource_demands,
+                angle=min(forward.angle, reverse.angle),
+                metadata={"forward_distance": forward.distance, "reverse_distance": reverse.distance,
+                    "hydrogen_atom_ids": [forward.metadata["hydrogen_atom_id"], reverse.metadata["hydrogen_atom_id"]],
+                    "legs": [dict(c.metadata, atom_ids=list(c.atom_ids), distance=c.distance, angle=c.angle)
+                             for c in (forward, reverse)]})
             candidates.append(candidate)
     return candidates
 
@@ -248,105 +226,97 @@ def _amides_are_far_enough_apart(
 
 
 def _residue_separation_ok(first: AtomRecord, second: AtomRecord, separation: int) -> bool:
-    """Whether two atoms are at least ``separation`` residues apart in sequence.
-
-    Atoms on different chains always pass -- they cannot be sequence neighbours. Used
-    to keep covalently-constrained arrangements out of interactions that are supposed
-    to be non-covalent contacts between distinct groups.
-    """
-    if first.chain_id != second.chain_id:
+    """Apply sequence exclusions only within the same actual polymer chain."""
+    if separation <= 0:
         return True
-    numbers = (_residue_number(first.residue_id), _residue_number(second.residue_id))
-    if any(number is None for number in numbers):
+    if first.molecule_type == second.molecule_type == "ligand":
+        return not (first.metadata.get("ligand_assembly_id") and _atom_entity_id(first) == _atom_entity_id(second))
+    if first.molecule_type not in {"protein", "nucleotide"} or second.molecule_type != first.molecule_type:
         return True
-    return abs(numbers[0] - numbers[1]) >= separation
-
-
-def _residue_number(residue_id: str) -> int | None:
-    digits = ""
-    for character in residue_id:
-        if character.isdigit() or (character == "-" and not digits):
-            digits += character
-        else:
-            break
+    def chain_identity(atom):
+        return (atom.metadata.get("source_model_id", atom.metadata.get("source_model")),
+                atom.metadata.get("source_entity_id"),
+                atom.metadata.get("source_label_asym_id") or atom.chain_id)
+    if chain_identity(first) != chain_identity(second):
+        return True
+    indices = [a.metadata.get("source_polymer_sequence_index", a.metadata.get("source_label_seq_id"))
+               for a in (first, second)]
     try:
-        return int(digits)
-    except ValueError:
-        return None
+        return abs(int(indices[0]) - int(indices[1])) >= separation
+    except (TypeError, ValueError):
+        # Deposited numbering is not sequence: insertion codes and gaps matter.
+        # Covalent-neighbourhood exclusions still apply without sequence metadata.
+        return first.component_id != second.component_id
 
 
-def _set_reciprocal_amide_angles(
-    candidate: CandidateInteraction,
-    first: FeatureRecord,
-    second: FeatureRecord,
-    context: DetectorContext,
-    min_angle: float,
-) -> None:
-    angles = []
-    for donor_feature, acceptor_feature in ((first, second), (second, first)):
-        donor_atom = context.atoms_by_id[donor_feature.metadata["nitrogen_atom_id"]]
-        acceptor_atom = context.atoms_by_id[acceptor_feature.metadata["oxygen_atom_id"]]
-        leg = _best_donor_angle(donor_atom, acceptor_atom.coord, context.atoms_by_id)
-        if leg is None:
-            candidate.rejection_reason = "missing_donor_hydrogen_geometry"
-            return
-        angles.append(leg)
 
-    candidate.angle = min(value for value, _ in angles)
-    candidate.metadata["hydrogen_atom_ids"] = [atom_id for _, atom_id in angles]
-    if candidate.angle < min_angle:
-        candidate.rejection_reason = f"angle_below_cutoff:{round(candidate.angle, 3)}<{min_angle}"
+
 
 
 def _solvent_bridge_candidates(context: DetectorContext, rule: dict) -> list[CandidateInteraction]:
     atoms_by_id = context.atoms_by_id
-    solvent_legs = [
-        candidate
-        for candidate in context.candidates
-        # Rejected legs were previously still eligible to form a bridge, so a
-        # bridge could be built entirely from H-bonds that were themselves thrown out.
-        if candidate.interaction_type == "hbond"
-        and not candidate.rejection_reason
-        and any(atoms_by_id[atom_id].molecule_type == "solvent" for atom_id in candidate.atom_ids)
-    ]
-    bridges: list[CandidateInteraction] = []
-    for i, leg_a in enumerate(solvent_legs):
-        solvent_components_a = {
-            atoms_by_id[atom_id].component_id
-            for atom_id in leg_a.atom_ids
+    cutoff = float(rule["distance"])
+    # Keying by the directed donor/acceptor feature pair also removes duplicate
+    # input legs without collapsing chemically different donor directions.
+    legs_by_solvent: dict[int, dict[tuple[int, ...], CandidateInteraction]] = {}
+    for candidate in context.candidates:
+        if (
+            candidate.interaction_type != "hbond"
+            or candidate.rejection_reason
+            or candidate.distance > cutoff
+        ):
+            continue
+        solvent_atom_ids = [
+            atom_id for atom_id in candidate.atom_ids
             if atoms_by_id[atom_id].molecule_type == "solvent"
-        }
-        for leg_b in solvent_legs[i + 1 :]:
-            solvent_components_b = {
-                atoms_by_id[atom_id].component_id
-                for atom_id in leg_b.atom_ids
-                if atoms_by_id[atom_id].molecule_type == "solvent"
-            }
-            shared_solvent = solvent_components_a & solvent_components_b
-            if not shared_solvent:
-                continue
-            non_solvent_components = tuple(
-                sorted(
-                    component_id
-                    for component_id in set(leg_a.component_ids + leg_b.component_ids)
-                    if component_id not in shared_solvent
+        ]
+        # A bridge is one water between two non-solvent partners, not a chain
+        # involving a water-water hydrogen bond.
+        if len(candidate.atom_ids) != 2 or len(solvent_atom_ids) != 1:
+            continue
+        legs_by_solvent.setdefault(solvent_atom_ids[0], {})[candidate.feature_ids] = candidate
+
+    bridges: list[CandidateInteraction] = []
+    for solvent_atom_id in sorted(legs_by_solvent):
+        solvent_legs = [
+            leg for _, leg in sorted(legs_by_solvent[solvent_atom_id].items())
+        ]
+        for i, leg_a in enumerate(solvent_legs):
+            for leg_b in solvent_legs[i + 1 :]:
+                endpoint_components = {
+                    _atom_entity_id(atoms_by_id[atom_id])
+                    for atom_id in leg_a.atom_ids + leg_b.atom_ids
+                    if atom_id != solvent_atom_id
+                }
+                if len(endpoint_components) != 2:
+                    continue
+                legs = (leg_a, leg_b)
+                bridges.append(
+                    CandidateInteraction(
+                        interaction_type="solvent_bridge",
+                        feature_ids=tuple(sorted(set(leg_a.feature_ids + leg_b.feature_ids))),
+                        atom_ids=tuple(sorted(set(leg_a.atom_ids + leg_b.atom_ids))),
+                        component_ids=tuple(sorted(set(leg_a.component_ids + leg_b.component_ids))),
+                        distance=leg_a.distance + leg_b.distance,
+                        priority=rule["priority"],
+                        stage="inter",
+                        # The two hydrogen bonds consume these resources. The
+                        # bridge only describes their joint connectivity.
+                        resource_demands=(),
+                        metadata={
+                            "legs": [dict(leg.metadata) for leg in legs],
+                            "leg_feature_ids": [list(leg.feature_ids) for leg in legs],
+                            "leg_donor_atom_ids": [
+                                demand.atom_id for leg in legs for demand in leg.resource_demands
+                                if demand.resource_type == "donor"
+                            ],
+                            "leg_acceptor_atom_ids": [
+                                demand.atom_id for leg in legs for demand in leg.resource_demands
+                                if demand.resource_type == "acceptor"
+                            ],
+                        },
+                    )
                 )
-            )
-            if len(non_solvent_components) < 2:
-                continue
-            bridges.append(
-                CandidateInteraction(
-                    interaction_type="solvent_bridge",
-                    feature_ids=tuple(sorted(set(leg_a.feature_ids + leg_b.feature_ids))),
-                    atom_ids=tuple(sorted(set(leg_a.atom_ids + leg_b.atom_ids))),
-                    component_ids=tuple(sorted(set(leg_a.component_ids + leg_b.component_ids))),
-                    distance=leg_a.distance + leg_b.distance,
-                    priority=rule["priority"],
-                    stage="inter",
-                    resource_demands=tuple(leg_a.resource_demands + leg_b.resource_demands),
-                    metadata={"legs": [leg_a.metadata, leg_b.metadata]},
-                )
-            )
     return bridges
 
 
@@ -356,35 +326,46 @@ def _solvent_bridge_candidates(context: DetectorContext, rule: dict) -> list[Can
 
 
 def _salt_bridge_candidates(context: DetectorContext, rule: dict) -> list[CandidateInteraction]:
-    candidates: list[CandidateInteraction] = []
+    candidates = []
+    def charged_atoms(feature):
+        atoms = [context.atoms_by_id[i] for i in feature.atom_ids]
+        if feature.metadata.get("source") == "protein_arg":
+            atoms = [a for a in atoms if a.element == "N"]
+        elif feature.metadata.get("source") == "nucleotide_phosphate":
+            atoms = [a for a in atoms if a.element == "O"]
+        return atoms
     for cation in context.features("cation"):
         for anion in context.features("anion"):
-            if cation.component_id == anion.component_id:
+            if _same_feature_entity(cation, anion):
                 continue
-            dist = distance(cation.center, anion.center)
+            pairs = [(distance(a.coord, b.coord), a.atom_id, b.atom_id)
+                     for a in charged_atoms(cation) for b in charged_atoms(anion)]
+            if not pairs:
+                continue
+            dist, first, second = min(pairs)
             if dist <= rule["distance"]:
-                candidates.append(_candidate("salt_bridge", cation, anion, dist, rule))
+                candidates.append(_candidate("salt_bridge", cation, anion, dist, rule,
+                    metadata={"distance_atom_ids": [first, second]}))
     return candidates
 
 
 def _metal_candidates(context: DetectorContext, rule: dict) -> list[CandidateInteraction]:
-    candidates: list[CandidateInteraction] = []
+    candidates = []
     for metal in context.features("metal"):
+        symbol = context.atoms_by_id[metal.atom_ids[0]].element
+        if symbol in {"Na", "K"}:
+            lower, upper = rule["alkali_min_distance"], rule["alkali_distance"]
+        elif symbol in {"Ca", "Co", "Cu", "Fe", "Mg", "Mn", "Ni", "Zn"}:
+            lower, upper = rule["min_distance"], rule["distance"]
+        else:
+            continue
         for acceptor in context.features("acceptor"):
-            if metal.component_id == acceptor.component_id:
+            if _same_feature_entity(metal, acceptor):
                 continue
             dist = distance(metal.center, acceptor.center)
-            if dist <= rule["distance"]:
-                candidates.append(
-                    _candidate(
-                        "metal_coordination",
-                        metal,
-                        acceptor,
-                        dist,
-                        rule,
-                        (ResourceDemand("acceptor", acceptor.atom_ids[0]),),
-                    )
-                )
+            if lower <= dist <= upper:
+                candidates.append(_candidate("metal_coordination", metal, acceptor, dist, rule,
+                    (ResourceDemand("acceptor", acceptor.atom_ids[0]),)))
     return candidates
 
 
@@ -392,10 +373,70 @@ def _hydrophobic_candidates(context: DetectorContext, rule: dict) -> list[Candid
     hydrophobes = context.features("hydrophobe")
     candidates: list[CandidateInteraction] = []
     for feature_a, feature_b, dist in _nearby_feature_pairs(hydrophobes, rule["distance"]):
-        if feature_a.component_id == feature_b.component_id:
+        if _same_feature_entity(feature_a, feature_b):
             continue
         candidates.append(_candidate("hydrophobic", feature_a, feature_b, dist, rule))
     return candidates
+
+
+def _hydrophobic_enclosure_candidates(
+    context: DetectorContext, rule: dict,
+) -> list[CandidateInteraction]:
+    """Group valid hydrophobic contacts that strictly surround a central atom.
+
+    Build every group from the same unmodified contact graph. Assignment replaces
+    constituent pairs later, so neighbouring enclosed atoms can share a contact.
+    """
+    contacts: dict[int, dict[int, CandidateInteraction]] = {}
+    for contact in context.candidates:
+        if (
+            contact.interaction_type != "hydrophobic"
+            or contact.rejection_reason
+            or len(contact.atom_ids) != 2
+            or not isfinite(contact.distance)
+            or contact.distance <= 0.0
+        ):
+            continue
+        first, second = contact.atom_ids
+        contacts.setdefault(first, {})[second] = contact
+        contacts.setdefault(second, {})[first] = contact
+
+    enclosures: list[CandidateInteraction] = []
+    for center_id, neighbors in sorted(contacts.items()):
+        if context.atoms_by_id[center_id].molecule_type != "ligand" or len(neighbors) < 4:
+            continue
+        neighbor_ids = sorted(neighbors)
+        if not is_enclosed(
+            context.atoms_by_id[center_id].coord,
+            [context.atoms_by_id[atom_id].coord for atom_id in neighbor_ids],
+        ):
+            continue
+        legs = [neighbors[atom_id] for atom_id in neighbor_ids]
+        enclosures.append(CandidateInteraction(
+            interaction_type="hydrophobic_enclosure",
+            feature_ids=tuple(sorted({feature_id for leg in legs for feature_id in leg.feature_ids})),
+            atom_ids=tuple(sorted([center_id, *neighbor_ids])),
+            component_ids=tuple(sorted({component_id for leg in legs for component_id in leg.component_ids})),
+            distance=max(leg.distance for leg in legs),
+            priority=rule["priority"],
+            stage="inter",
+            resource_demands=(),
+            metadata={
+                "center_atom_id": center_id,
+                "neighbor_atom_ids": neighbor_ids,
+                "interaction_subtype": "hydrophobic_enclosure",
+                "legs": [
+                    {
+                        "atom_ids": list(leg.atom_ids),
+                        "feature_ids": list(leg.feature_ids),
+                        "component_ids": list(leg.component_ids),
+                        "distance": leg.distance,
+                    }
+                    for leg in legs
+                ],
+            },
+        ))
+    return enclosures
 
 
 # --------------------------------------------------------------------------
@@ -403,49 +444,40 @@ def _hydrophobic_candidates(context: DetectorContext, rule: dict) -> list[Candid
 # --------------------------------------------------------------------------
 
 
-def _ring_stack_candidates(
-    interaction_type: str,
-    rule: dict,
-    pairs: Iterable[tuple[FeatureRecord, FeatureRecord]],
-    *,
-    gate_angle: bool,
-) -> list[CandidateInteraction]:
-    """Shared face-to-face stacking geometry.
-
-    ``gate_angle`` distinguishes the two conventions in play: ``pipi_stack`` has
-    always used its angle as a parallel/T-shaped *label* and accepted both, while
-    the aliphatic stacks genuinely require near-parallel faces -- a saturated ring
-    has no quadrupole to stabilise an edge-on approach.
-    """
-    candidates: list[CandidateInteraction] = []
+def _ring_stack_candidates(interaction_type: str, rule: dict,
+        pairs: Iterable[tuple[FeatureRecord, FeatureRecord]], *, gate_angle: bool) -> list[CandidateInteraction]:
+    candidates = []
     for ring_a, ring_b in pairs:
-        if ring_a.component_id == ring_b.component_id:
+        if _same_feature_entity(ring_a, ring_b):
             continue
         dist = distance(ring_a.center, ring_b.center)
-        if dist > rule["distance"]:
-            continue
         angle = _normal_angle(ring_a.normal, ring_b.normal)
-        offset = min(
-            point_plane_offset(ring_b.center, ring_a.center, ring_a.normal or (0.0, 0.0, 1.0)),
-            point_plane_offset(ring_a.center, ring_b.center, ring_b.normal or (0.0, 0.0, 1.0)),
-        )
-        if offset > rule["offset"]:
+        if not all(isfinite(v) for v in (dist, angle)):
             continue
-        if gate_angle and angle > rule["angle"]:
+        if interaction_type == "aliphatic_pi_stack":
+            # ring_b is aromatic; the published height is measured to its plane.
+            separation = abs(sum((ring_a.center[i] - ring_b.center[i]) * ring_b.normal[i] for i in range(3))) / sqrt(sum(v*v for v in ring_b.normal))
+            if not (dist < rule["distance"] and angle < rule["angle"] and separation < rule["plane_separation"]):
+                continue
+        else:
+            separation = None
+            if dist > rule["distance"]:
+                continue
+        offset = min(point_plane_offset(ring_b.center, ring_a.center, ring_a.normal),
+                     point_plane_offset(ring_a.center, ring_b.center, ring_b.normal))
+        if "offset" in rule and offset > rule["offset"]:
             continue
-        geometry = "parallel" if angle <= rule.get("angle", 45.0) else "t_shaped"
-        candidates.append(
-            _candidate(
-                interaction_type,
-                ring_a,
-                ring_b,
-                dist,
-                rule,
-                angle=angle,
-                offset=offset,
-                metadata={"geometry": geometry},
-            )
-        )
+        if interaction_type == "pipi_stack":
+            if rule["angle"] < angle < rule["min_perpendicular_angle"]:
+                continue
+        elif gate_angle and angle > rule["angle"]:
+            continue
+        geometry = "parallel" if angle <= rule.get("angle", 30.0) else "t_shaped"
+        metadata = {"geometry": geometry}
+        if separation is not None:
+            metadata["plane_separation"] = separation
+        candidates.append(_candidate(interaction_type, ring_a, ring_b, dist, rule,
+            angle=angle, offset=offset, metadata=metadata))
     return candidates
 
 
@@ -491,17 +523,23 @@ def _aliphatic_stack_candidates(
 
 
 def _amide_pi_candidates(context: DetectorContext, rule: dict) -> list[CandidateInteraction]:
-    """Amide plane stacked on an aromatic face."""
-    return _ring_stack_candidates(
-        "amide_pi",
-        rule,
-        (
-            (amide, ring)
-            for amide in context.features("amide")
-            for ring in context.rings(rule)
-        ),
-        gate_angle=True,
-    )
+    candidates = []
+    for amide in context.features("amide"):
+        carbon = context.atoms_by_id[amide.metadata["carbon_atom_id"]]
+        nitrogen = context.atoms_by_id[amide.metadata["nitrogen_atom_id"]]
+        center = tuple((carbon.coord[i] + nitrogen.coord[i]) / 2.0 for i in range(3))
+        for ring in context.rings(rule):
+            if _same_feature_entity(amide, ring):
+                continue
+            dist = distance(center, ring.center)
+            angle = _normal_angle(amide.normal, ring.normal)
+            approach = _plane_normal_angle(amide.normal, tuple(ring.center[i] - center[i] for i in range(3)))
+            if not isfinite(dist) or not isfinite(angle) or approach is None:
+                continue
+            if dist <= rule["distance"] and angle <= rule["angle"] and approach <= rule["approach_angle"]:
+                candidates.append(_candidate("amide_pi", amide, ring, dist, rule, angle=angle,
+                    metadata={"approach_angle": approach, "amide_center": list(center)}))
+    return candidates
 
 
 # --------------------------------------------------------------------------
@@ -509,43 +547,38 @@ def _amide_pi_candidates(context: DetectorContext, rule: dict) -> list[Candidate
 # --------------------------------------------------------------------------
 
 
-def _charge_pi_candidates(
-    context: DetectorContext,
-    rule: dict,
-    charge_type: str,
-    interaction_type: str,
-) -> list[CandidateInteraction]:
-    candidates: list[CandidateInteraction] = []
-    for point in context.features(charge_type):
-        for ring in context.rings(rule):
-            if point.component_id == ring.component_id:
-                continue
-            dist = distance(point.center, ring.center)
-            if dist > rule["distance"]:
-                continue
-            angle = _point_ring_angle(point, ring)
-            offset = point_plane_offset(point.center, ring.center, ring.normal or (0.0, 0.0, 1.0))
-            if angle <= rule.get("angle", 90.0) and offset <= rule["offset"]:
-                candidates.append(
-                    _candidate(
-                        interaction_type,
-                        point,
-                        ring,
-                        dist,
-                        rule,
-                        angle=angle,
-                        offset=offset,
-                    )
-                )
-    return candidates
 
 
 def _cation_pi_candidates(context: DetectorContext, rule: dict) -> list[CandidateInteraction]:
-    return _charge_pi_candidates(context, rule, "cation", "cation_pi")
+    candidates = []
+    for cation in context.features("cation"):
+        for ring in context.rings(rule):
+            if _same_feature_entity(cation, ring):
+                continue
+            dist = distance(cation.center, ring.center)
+            angle = _point_ring_angle(cation, ring)
+            if not isfinite(angle) or dist > rule["distance"]:
+                continue
+            offset = point_plane_offset(cation.center, ring.center, ring.normal)
+            if offset > rule["offset"]:
+                continue
+            metadata = {"point_plane_angle": angle}
+            if len(cation.atom_ids) == 1:
+                atom = context.atoms_by_id[cation.atom_ids[0]]
+                roots = _heavy_neighbors(atom, context.atoms_by_id)
+                if atom.metadata.get("tertiary_amine_cation") and len(roots) == 3:
+                    # PLIP compares the amine substituent plane with the aromatic plane.
+                    a = tuple(roots[1].coord[i] - roots[0].coord[i] for i in range(3))
+                    b = tuple(roots[2].coord[i] - roots[0].coord[i] for i in range(3))
+                    normal = (a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0])
+                    approach = _normal_angle(normal, ring.normal)
+                    if not isfinite(approach) or approach > rule["tertiary_amine_angle"]:
+                        continue
+                    metadata["tertiary_amine_angle"] = approach
+            candidates.append(_candidate("cation_pi", cation, ring, dist, rule, angle=angle, offset=offset, metadata=metadata))
+    return candidates
 
 
-def _anion_pi_candidates(context: DetectorContext, rule: dict) -> list[CandidateInteraction]:
-    return _charge_pi_candidates(context, rule, "anion", "anion_pi")
 
 
 def _anion_aromatic_edge_candidates(
@@ -563,14 +596,14 @@ def _anion_aromatic_edge_candidates(
     min_offset = float(rule["min_offset"])
     for anion in context.features("anion"):
         for ring in context.rings(rule):
-            if anion.component_id == ring.component_id:
+            if _same_feature_entity(anion, ring):
                 continue
             dist = distance(anion.center, ring.center)
             if dist > rule["distance"]:
                 continue
             angle = _point_ring_angle(anion, ring)
             offset = point_plane_offset(anion.center, ring.center, ring.normal or (0.0, 0.0, 1.0))
-            if angle < min_angle:
+            if not isfinite(angle) or angle < min_angle:
                 continue
             if not min_offset <= offset <= rule["offset"]:
                 continue
@@ -589,53 +622,50 @@ def _anion_aromatic_edge_candidates(
     return candidates
 
 
-def _point_pi_candidates(
-    context: DetectorContext,
-    rule: dict,
-    point_type: str,
-    interaction_type: str,
-    point_elements: set[str] | None = None,
-) -> list[CandidateInteraction]:
-    candidates: list[CandidateInteraction] = []
+def _point_pi_candidates(context: DetectorContext, rule: dict, point_type: str,
+        interaction_type: str, point_elements: set[str] | None = None) -> list[CandidateInteraction]:
+    candidates = []
     for point in context.features(point_type):
         point_atom = context.atoms_by_id[point.atom_ids[0]]
         if point_elements is not None and point_atom.element not in point_elements:
             continue
         for ring in context.rings(rule):
-            if point.component_id == ring.component_id:
+            if _same_feature_entity(point, ring):
                 continue
             dist = distance(point.center, ring.center)
-            if dist > rule["distance"]:
+            face_angle = _point_ring_angle(point, ring)
+            if not isfinite(dist) or not isfinite(face_angle):
                 continue
-            point_plane_angle = _point_ring_angle(point, ring)
-            offset = point_plane_offset(point.center, ring.center, ring.normal or (0.0, 0.0, 1.0))
-            if point_plane_angle > rule.get("angle", 90.0) or offset > rule["offset"]:
+            if face_angle > rule.get("angle", 90.0):
                 continue
-
-            demands: tuple[ResourceDemand, ...] = ()
-            if point_type in _PI_POINT_RESOURCES:
-                demands = (ResourceDemand(_PI_POINT_RESOURCES[point_type], point.atom_ids[0]),)
-
-            candidate = _candidate(
-                interaction_type,
-                point,
-                ring,
-                dist,
-                rule,
-                demands,
-                offset=offset,
-                metadata={"point_plane_angle": point_plane_angle},
-            )
-            if "donor_angle" in rule:
-                _set_donor_angle(
-                    candidate,
-                    point_atom,
-                    ring.center,
-                    context.atoms_by_id,
-                    float(rule["donor_angle"]),
-                )
+            if "distance" in rule and dist > rule["distance"]:
+                continue
+            if "hydrogen_distance" in rule:
+                # Safe prefilter only: the measured cutoff remains H–centroid.
+                lengths = [distance(point_atom.coord, context.atoms_by_id[i].coord) for i in point_atom.bonds
+                           if i in context.atoms_by_id and context.atoms_by_id[i].element in {"H", "D", "T"}
+                           and not context.atoms_by_id[i].metadata.get("ignored_by_template")]
+                if lengths and dist > rule["hydrogen_distance"] + max(lengths):
+                    continue
+            offset = point_plane_offset(point.center, ring.center, ring.normal)
+            demands = ((ResourceDemand(_PI_POINT_RESOURCES[point_type], point.atom_ids[0]),)
+                       if point_type in _PI_POINT_RESOURCES else ())
+            candidate = _candidate(interaction_type, point, ring, dist, rule, demands,
+                offset=offset, metadata={"point_plane_angle": face_angle})
+            if "hydrogen_distance" in rule:
+                _set_hydrogen_geometry(candidate, point_atom, ring.center, context.atoms_by_id,
+                    min_angle=float(rule["donor_angle"]), hydrogen_distance=float(rule["hydrogen_distance"]))
+            elif interaction_type == "halogen_pi":
+                roots = _heavy_neighbors(point_atom, context.atoms_by_id, {"C"})
+                if not roots:
+                    candidate.rejection_reason = "missing_sigma_hole_root_geometry"
+                else:
+                    candidate.angle, root_id = max((_bond_angle(root.coord, point_atom.coord, ring.center), root.atom_id) for root in roots)
+                    candidate.metadata["sigma_hole_root_atom_id"] = root_id
+                    if not isfinite(candidate.angle) or candidate.angle <= rule["donor_angle"]:
+                        candidate.rejection_reason = "donor_angle_not_above_cutoff"
             else:
-                candidate.angle = point_plane_angle
+                candidate.angle = face_angle
             candidates.append(candidate)
     return candidates
 
@@ -652,7 +682,7 @@ def _hbond_pi_candidates(context: DetectorContext, rule: dict) -> list[Candidate
     # Carbons still carry a `donor` feature, so restrict this to the heteroatom
     # donors; a C-H pointing at a ring is a CH-pi, which has its own rule.
     return _point_pi_candidates(
-        context, rule, "donor", "hbond_pi", point_elements={"N", "O", "S", "Se"}
+        context, rule, "donor", "hbond_pi", point_elements={"N", "O"}
     )
 
 
@@ -668,7 +698,38 @@ def _halogen_pi_candidates(context: DetectorContext, rule: dict) -> list[Candida
 
 
 def _chalcogen_pi_candidates(context: DetectorContext, rule: dict) -> list[CandidateInteraction]:
-    return _point_pi_candidates(context, rule, "chalcogen_donor", "chalcogen_pi")
+    """Union of directional sulfur–pi and broad thioether/sulfoxide–aromatic contacts."""
+    candidates = []
+    seen = set()
+    for sulfur in context.features("sulfur_pi"):
+        atom = context.atoms_by_id[sulfur.atom_ids[0]]
+        types = set(sulfur.metadata.get("sulfur_pi_types", ()))
+        roots = _heavy_neighbors(atom, context.atoms_by_id, {"C", "S"})
+        for ring in context.rings(rule):
+            identity = (atom.atom_id, tuple(sorted(ring.atom_ids)))
+            if identity in seen or _same_feature_entity(sulfur, ring):
+                continue
+            dist = distance(sulfur.center, ring.center)
+            face = _point_ring_angle(sulfur, ring)
+            if not isfinite(dist) or not isfinite(face):
+                continue
+            root_angles = [(_bond_angle(r.coord, atom.coord, ring.center), r.atom_id) for r in roots]
+            directional_angle, root_id = max((value for value in root_angles if isfinite(value[0])), default=(0.0, None))
+            classifications = []
+            if types & {"thioether", "disulfide"} and dist <= rule["directional_distance"] and directional_angle >= rule["directional_angle"]:
+                classifications.append("directional")
+            if types & {"thioether", "sulfoxide"} and dist < rule["distance"] and face < rule["angle"]:
+                classifications.append("sulfur_aromatic")
+            if not classifications:
+                continue
+            seen.add(identity)
+            metadata = {"geometry_classifications": classifications, "point_plane_angle": face,
+                        "sulfur_pi_types": sorted(types), "directional_angle": directional_angle}
+            if root_id is not None:
+                metadata["sigma_hole_root_atom_id"] = root_id
+            candidates.append(_candidate("chalcogen_pi", sulfur, ring, dist, rule, angle=face,
+                offset=point_plane_offset(sulfur.center, ring.center, ring.normal), metadata=metadata))
+    return candidates
 
 
 # --------------------------------------------------------------------------
@@ -676,123 +737,74 @@ def _chalcogen_pi_candidates(context: DetectorContext, rule: dict) -> list[Candi
 # --------------------------------------------------------------------------
 
 
-def _sigma_hole_candidates(
-    context: DetectorContext,
-    rule: dict,
-    *,
-    interaction_type: str,
-    donor_type: str,
-    resource: str,
-    root_elements: set[str] | None = None,
-    record_elevation: bool = False,
-    record_activation: bool = False,
-    exclude_hydrogen_contacts: bool = False,
-) -> list[CandidateInteraction]:
-    """Shared sigma-hole geometry for halogen, chalcogen and tetrel bonds.
-
-    A sigma-hole sits on the extension of an R-D bond, so acceptance turns on the
-    R-D...A angle. Where the donor carries several substituents the best of them is
-    used -- the previous halogen-only implementation took ``root_atoms[0]``, which
-    silently mismeasured any multi-substituted donor.
-    """
-    candidates: list[CandidateInteraction] = []
-    min_angle = float(rule["angle"])
-    max_distance = float(rule["distance"])
-    min_distance = float(rule.get("min_distance", 0.0))
-
+def _sigma_hole_candidates(context: DetectorContext, rule: dict, *, interaction_type: str,
+        donor_type: str, resource: str, root_elements: set[str] | None = None,
+        record_elevation: bool = False, record_activation: bool = False) -> list[CandidateInteraction]:
+    candidates = []
+    carbonyl_oxygen = {f.metadata["oxygen_atom_id"]: f.metadata["carbon_atom_id"]
+                      for f in context.features("carbonyl")}
     for donor in context.features(donor_type):
         donor_atom = context.atoms_by_id[donor.atom_ids[0]]
         roots = _heavy_neighbors(donor_atom, context.atoms_by_id, root_elements)
+        if interaction_type == "tetrel_bond" and "tetrel_root_atom_ids" in donor_atom.metadata:
+            valid_roots = set(donor_atom.metadata["tetrel_root_atom_ids"])
+            roots = [root for root in roots if root.atom_id in valid_roots]
         for acceptor in context.features("acceptor"):
-            acceptor_atom_id = acceptor.atom_ids[0]
-            if donor.component_id == acceptor.component_id:
+            acceptor_atom = context.atoms_by_id[acceptor.atom_ids[0]]
+            if _same_feature_entity(donor, acceptor):
                 continue
+            if interaction_type in {"halogen_bond", "tetrel_bond"} and acceptor_atom.element != "O":
+                continue
+            if interaction_type == "tetrel_bond" and acceptor_atom.atom_id not in carbonyl_oxygen:
+                continue
+            if interaction_type == "chalcogen_bond":
+                prefix = {("S", "O"): "s_o", ("Se", "O"): "se_o", ("Se", "S"): "se_s"}.get((donor_atom.element, acceptor_atom.element))
+                if prefix is None:
+                    continue
+                lower, upper = rule[prefix + "_min_distance"], rule[prefix + "_distance"]
+            else:
+                lower, upper = rule.get("min_distance", 0.0), rule["distance"]
             dist = distance(donor.center, acceptor.center)
-            if not min_distance <= dist <= max_distance:
+            if not lower <= dist <= upper or (interaction_type == "chalcogen_bond" and dist <= lower):
                 continue
-
-            candidate = _candidate(
-                interaction_type,
-                donor,
-                acceptor,
-                dist,
-                rule,
-                (
-                    ResourceDemand(resource, donor.atom_ids[0]),
-                    ResourceDemand("acceptor", acceptor_atom_id),
-                ),
-            )
-            if not roots:
-                candidate.rejection_reason = "missing_sigma_hole_root_geometry"
-                candidates.append(candidate)
-                continue
-
-            best_angle, best_root = max(
-                (
-                    (geom_angle(root.coord, donor_atom.coord, acceptor.center), root)
-                    for root in roots
-                ),
-                key=lambda pair: pair[0],
-            )
-            candidate.angle = best_angle
-            candidate.metadata["sigma_hole_root_atom_id"] = best_root.atom_id
-            if best_angle < min_angle:
-                candidate.rejection_reason = (
-                    f"angle_below_cutoff:{round(best_angle, 3)}<{min_angle}"
-                )
-                candidates.append(candidate)
-                continue
-
+            candidate = _candidate(interaction_type, donor, acceptor, dist, rule,
+                (ResourceDemand(resource, donor_atom.atom_id), ResourceDemand("acceptor", acceptor_atom.atom_id)))
             if record_activation:
                 candidate.metadata["sigma_hole_activated"] = donor_atom.sigma_hole_activated
-                if rule.get("require_activated_sigma_hole") and not donor_atom.sigma_hole_activated:
-                    # Checked after the geometry so the rejected set stays meaningful:
-                    # "this is a chalcogen bond geometrically, but the donor cannot
-                    # donate". Checking first would emit one of these for every Met or
-                    # Cys that happens to sit near an acceptor.
-                    candidate.rejection_reason = "sigma_hole_not_activated"
-                    candidates.append(candidate)
-                    continue
-
+            if not roots:
+                candidate.rejection_reason = "missing_sigma_hole_root_geometry"
+            else:
+                candidate.angle, root_id = max((_bond_angle(root.coord, donor_atom.coord, acceptor.center), root.atom_id) for root in roots)
+                candidate.metadata["sigma_hole_root_atom_id"] = root_id
+                if not isfinite(candidate.angle) or candidate.angle < rule["angle"]:
+                    candidate.rejection_reason = f"angle_below_cutoff:{round(candidate.angle, 3)}<{rule['angle']}"
+            if candidate.rejection_reason is None and interaction_type in {"halogen_bond", "tetrel_bond"}:
+                if interaction_type == "tetrel_bond":
+                    antecedents = [context.atoms_by_id[carbonyl_oxygen[acceptor_atom.atom_id]]]
+                    minimum, maximum = rule["acceptor_angle"], 180.0
+                else:
+                    antecedents = _heavy_neighbors(acceptor_atom, context.atoms_by_id, {"C", "N", "P", "S"})
+                    minimum, maximum = rule["acceptor_min_angle"], rule["acceptor_angle"]
+                values = [(_bond_angle(donor_atom.coord, acceptor_atom.coord, a.coord), a.atom_id) for a in antecedents]
+                valid = [item for item in values if minimum <= item[0] <= maximum]
+                if not values:
+                    candidate.rejection_reason = "missing_acceptor_antecedent_geometry"
+                else:
+                    angle, atom_id = max(valid or values)
+                    candidate.metadata.update(acceptor_angle=angle, acceptor_antecedent_atom_id=atom_id)
+                    if not valid:
+                        candidate.rejection_reason = "acceptor_angle_outside_cutoff"
             if record_elevation:
-                # How far the acceptor sits out of the R1-D-R2 plane. Reported, not
-                # gated: the sigma-hole angle above already confines this to 40 deg,
-                # so a separate cutoff could never reject anything.
-                elevation = _out_of_plane_elevation(
-                    donor_atom, acceptor.center, context.atoms_by_id
-                )
+                elevation = _out_of_plane_elevation(donor_atom, acceptor.center, context.atoms_by_id)
                 if elevation is not None:
                     candidate.metadata["elevation"] = elevation
-
-            if exclude_hydrogen_contacts:
-                hydrogen_angle = _closest_hydrogen_angle(
-                    donor_atom, acceptor.center, context.atoms_by_id
-                )
-                if hydrogen_angle is not None:
-                    candidate.metadata["hydrogen_angle"] = hydrogen_angle
-                    limit = float(rule["hydrogen_angle"])
-                    if hydrogen_angle < limit:
-                        # A C-H pointing at the acceptor is a C-H...A contact. Without
-                        # this the far cheaper weak_hbond rule would claim every one
-                        # of these first anyway, and the label would be wrong.
-                        candidate.rejection_reason = (
-                            f"hydrogen_contact:{round(hydrogen_angle, 3)}<{limit}"
-                        )
-                        candidates.append(candidate)
-                        continue
-
             candidates.append(candidate)
     return candidates
 
 
 def _halogen_bond_candidates(context: DetectorContext, rule: dict) -> list[CandidateInteraction]:
-    return _sigma_hole_candidates(
-        context,
-        rule,
-        interaction_type="halogen_bond",
-        donor_type="halogen_donor",
-        resource="halogen_donor",
-    )
+    return _sigma_hole_candidates(context, rule, interaction_type="halogen_bond",
+        donor_type="halogen_donor", resource="halogen_donor", root_elements={"C"})
 
 
 def _chalcogen_bond_candidates(context: DetectorContext, rule: dict) -> list[CandidateInteraction]:
@@ -802,25 +814,15 @@ def _chalcogen_bond_candidates(context: DetectorContext, rule: dict) -> list[Can
         interaction_type="chalcogen_bond",
         donor_type="chalcogen_donor",
         resource="chalcogen_donor",
+        root_elements={"C"},
         record_elevation=True,
         record_activation=True,
     )
 
 
 def _tetrel_bond_candidates(context: DetectorContext, rule: dict) -> list[CandidateInteraction]:
-    from .parser import TETREL_WITHDRAWING_ELEMENTS
-
-    return _sigma_hole_candidates(
-        context,
-        rule,
-        interaction_type="tetrel_bond",
-        donor_type="tetrel_donor",
-        resource="tetrel_donor",
-        # The sigma-hole is trans to the withdrawing substituent, so only those
-        # count as the axis -- an ordinary C-C bond does not open one.
-        root_elements=TETREL_WITHDRAWING_ELEMENTS,
-        exclude_hydrogen_contacts=True,
-    )
+    return _sigma_hole_candidates(context, rule, interaction_type="tetrel_bond",
+        donor_type="tetrel_donor", resource="tetrel_donor", root_elements={"C", "N", "O", "S"})
 
 
 # --------------------------------------------------------------------------
@@ -839,7 +841,6 @@ def _n_pi_star_candidates(context: DetectorContext, rule: dict) -> list[Candidat
     max_distance = float(rule["distance"])
     min_angle = float(rule["min_angle"])
     max_angle = float(rule["angle"])
-    approach_limit = float(rule["approach_angle"])
     separation = int(rule.get("min_residue_separation", 1))
     candidates: list[CandidateInteraction] = []
 
@@ -862,7 +863,7 @@ def _n_pi_star_candidates(context: DetectorContext, rule: dict) -> list[Candidat
             dist = distance(donor_oxygen.coord, acceptor_carbon.coord)
             if dist > max_distance:
                 continue
-            burgi_dunitz = geom_angle(
+            burgi_dunitz = _bond_angle(
                 donor_oxygen.coord, acceptor_carbon.coord, acceptor_oxygen.coord
             )
             if not min_angle <= burgi_dunitz <= max_angle:
@@ -874,8 +875,6 @@ def _n_pi_star_candidates(context: DetectorContext, rule: dict) -> list[Candidat
                     donor_oxygen.coord[i] - acceptor_carbon.coord[i] for i in range(3)
                 ),
             )
-            if approach is not None and approach > approach_limit:
-                continue
 
             candidate = _candidate(
                 "n_pi_star",
@@ -946,18 +945,6 @@ def _out_of_plane_elevation(
     return abs(90.0 - angle_to_normal)
 
 
-def _closest_hydrogen_angle(
-    donor_atom: AtomRecord,
-    target: Vec3,
-    atoms_by_id: dict[int, AtomRecord],
-) -> float | None:
-    """Smallest H-D...A angle over the donor's hydrogens, or None if it has none."""
-    angles = [
-        geom_angle(atoms_by_id[neighbor_id].coord, donor_atom.coord, target)
-        for neighbor_id in donor_atom.bonds
-        if neighbor_id in atoms_by_id and atoms_by_id[neighbor_id].element == "H"
-    ]
-    return min(angles) if angles else None
 
 
 def _plane_normal_angle(normal: Vec3 | None, vector: Vec3) -> float | None:
@@ -970,10 +957,16 @@ def _plane_normal_angle(normal: Vec3 | None, vector: Vec3) -> float | None:
     return min(angle, 180.0 - angle)
 
 
+def _bond_angle(first: Vec3, center: Vec3, last: Vec3) -> float:
+    value = _vector_angle(tuple(first[i] - center[i] for i in range(3)),
+                          tuple(last[i] - center[i] for i in range(3)))
+    return float("nan") if value is None else value
+
+
 def _vector_angle(first: Vec3, second: Vec3) -> float | None:
     norm_a = sqrt(sum(v * v for v in first))
     norm_b = sqrt(sum(v * v for v in second))
-    if norm_a == 0.0 or norm_b == 0.0:
+    if not isfinite(norm_a + norm_b) or norm_a <= 1e-12 or norm_b <= 1e-12:
         return None
     value = sum(first[i] * second[i] for i in range(3)) / (norm_a * norm_b)
     return degrees(acos(max(-1.0, min(1.0, value))))
@@ -990,8 +983,12 @@ def _candidate(
     offset: float | None = None,
     metadata: dict | None = None,
 ) -> CandidateInteraction:
-    component_ids = (feature_a.component_id, feature_b.component_id)
-    stage = "intra" if feature_a.component_id == feature_b.component_id else "inter"
+    first_components = _feature_component_ids(feature_a)
+    second_components = _feature_component_ids(feature_b)
+    component_ids = first_components + second_components
+    if len(first_components) > 1 or len(second_components) > 1:
+        component_ids = tuple(dict.fromkeys(component_ids))
+    stage = "intra" if _same_feature_entity(feature_a, feature_b) else "inter"
     return CandidateInteraction(
         interaction_type=interaction_type,
         feature_ids=(feature_a.feature_id, feature_b.feature_id),
@@ -1007,6 +1004,137 @@ def _candidate(
     )
 
 
+def _feature_component_ids(feature: FeatureRecord) -> tuple[str, ...]:
+    return tuple(feature.metadata.get("component_ids") or (feature.component_id,))
+
+
+def _feature_entity_id(feature: FeatureRecord) -> tuple[str, str]:
+    assembly_id = feature.metadata.get("ligand_assembly_id")
+    if assembly_id and not feature.metadata.get("crosses_attachment_boundary"):
+        return "assembly", str(assembly_id)
+    return "component", feature.component_id
+
+
+def _same_feature_entity(first: FeatureRecord, second: FeatureRecord) -> bool:
+    return _feature_entity_id(first) == _feature_entity_id(second)
+
+
+def _atom_entity_id(atom: AtomRecord) -> tuple[str, str]:
+    assembly_id = atom.metadata.get("ligand_assembly_id")
+    if atom.molecule_type == "ligand" and assembly_id:
+        return "assembly", str(assembly_id)
+    return "component", atom.component_id
+
+
+def _with_covalent_neighborhood_rejections(
+    candidates: list[CandidateInteraction],
+    atoms: list[AtomRecord],
+    features: list[FeatureRecord],
+) -> None:
+    """Exclude 1-2 and 1-3 heavy-atom contacts across an imported covalent link.
+
+    Existing intracomponent chemistry keeps its established treatment. Only a
+    path containing an explicitly imported link triggers this diagnostic, and
+    the path must join sites from the two participating features.
+    """
+    heavy_atoms = {atom.atom_id: atom for atom in atoms if atom.element != "H"}
+    links = {
+        tuple(sorted((atom.atom_id, neighbor_id)))
+        for atom in heavy_atoms.values()
+        for neighbor_id in atom.metadata.get("assembly_link_neighbors", ())
+        if neighbor_id in heavy_atoms and neighbor_id != atom.atom_id
+    }
+    if not links:
+        return
+    neighbors: dict[int, set[int]] = {atom_id: set() for atom_id in heavy_atoms}
+    for atom in heavy_atoms.values():
+        for neighbor_id in atom.bonds:
+            if neighbor_id in heavy_atoms and neighbor_id != atom.atom_id:
+                neighbors[atom.atom_id].add(neighbor_id)
+                neighbors[neighbor_id].add(atom.atom_id)
+    for first, second in links:
+        neighbors[first].add(second)
+        neighbors[second].add(first)
+    excluded_pairs = set(links)
+    for first, second in links:
+        excluded_pairs.update(
+            tuple(sorted((neighbor, second)))
+            for neighbor in neighbors[first] if neighbor != second
+        )
+        excluded_pairs.update(
+            tuple(sorted((first, neighbor)))
+            for neighbor in neighbors[second] if neighbor != first
+        )
+    features_by_id = {feature.feature_id: feature for feature in features}
+    for candidate in candidates:
+        if len(candidate.feature_ids) != 2:
+            continue
+        first = features_by_id.get(candidate.feature_ids[0])
+        second = features_by_id.get(candidate.feature_ids[1])
+        if first is None or second is None:
+            continue
+        if any(
+            tuple(sorted((first_id, second_id))) in excluded_pairs
+            for first_id in first.atom_ids if first_id in heavy_atoms
+            for second_id in second.atom_ids if second_id in heavy_atoms
+        ):
+            candidate.rejection_reason = "covalent_neighborhood"
+
+
+def _set_hydrogen_geometry(
+    candidate: CandidateInteraction,
+    donor_atom: AtomRecord,
+    target_center: Vec3,
+    atoms_by_id: dict[int, AtomRecord],
+    *,
+    min_angle: float,
+    hydrogen_distance: float,
+    hydrogen_min_distance: float = 0.0,
+    acceptor_atom: AtomRecord | None = None,
+    acceptor_min_angle: float | None = None,
+) -> None:
+    """All hydrogen-dependent criteria must hold for the same explicit hydrogen."""
+    hydrogens = [atoms_by_id[i] for i in donor_atom.bonds
+                 if i in atoms_by_id and atoms_by_id[i].element in {"H", "D", "T"}
+                 and not atoms_by_id[i].metadata.get("ignored_by_template")]
+    if not hydrogens:
+        candidate.rejection_reason = "missing_donor_hydrogen_geometry"
+        return
+    antecedents = [a for a in _heavy_neighbors(acceptor_atom, atoms_by_id)
+                   if all(isfinite(v) for v in a.coord + target_center)
+                   and distance(a.coord, target_center) > 1e-12] if acceptor_atom else []
+    if acceptor_min_angle is not None and not antecedents:
+        candidate.rejection_reason = "missing_acceptor_antecedent_geometry"
+        return
+    evaluated = []
+    for hydrogen in hydrogens:
+        dha = _bond_angle(donor_atom.coord, hydrogen.coord, target_center)
+        ha = distance(hydrogen.coord, target_center)
+        metadata = {"hydrogen_atom_id": hydrogen.atom_id, "hydrogen_distance": ha}
+        reason = None
+        if not all(isfinite(v) for v in (dha, ha)) or distance(donor_atom.coord, hydrogen.coord) <= 1e-12:
+            reason = "invalid_donor_hydrogen_geometry"
+        elif dha < min_angle:
+            reason = f"angle_below_cutoff:{round(dha, 3)}<{min_angle}"
+        elif not hydrogen_min_distance <= ha <= hydrogen_distance:
+            reason = "hydrogen_distance_outside_cutoff"
+        if antecedents:
+            values = [(_bond_angle(a.coord, target_center, hydrogen.coord), a.atom_id) for a in antecedents]
+            values = [item for item in values if isfinite(item[0])]
+            if not values:
+                reason = reason or "invalid_acceptor_antecedent_geometry"
+            else:
+                antecedent_angle, antecedent_id = max(values)
+                metadata.update(acceptor_angle=antecedent_angle, acceptor_antecedent_atom_id=antecedent_id)
+                if reason is None and acceptor_min_angle is not None and antecedent_angle < acceptor_min_angle:
+                    reason = "acceptor_angle_below_cutoff"
+        evaluated.append((reason is not None, -dha, ha, hydrogen.atom_id, reason, metadata))
+    failed, negative_angle, _, _, reason, metadata = min(evaluated, key=lambda item: item[:4])
+    candidate.angle = -negative_angle
+    candidate.metadata.update(metadata)
+    candidate.rejection_reason = reason if failed else None
+
+
 def _best_donor_angle(
     donor_atom: AtomRecord,
     target_center: Vec3,
@@ -1015,16 +1143,21 @@ def _best_donor_angle(
     hydrogen_atoms = [
         atoms_by_id[neighbor_id]
         for neighbor_id in donor_atom.bonds
-        if neighbor_id in atoms_by_id and atoms_by_id[neighbor_id].element == "H"
+        if neighbor_id in atoms_by_id
+        and atoms_by_id[neighbor_id].element in {"H", "D", "T"}
+        and not atoms_by_id[neighbor_id].metadata.get("ignored_by_template")
+        and all(isfinite(v) for v in atoms_by_id[neighbor_id].coord + donor_atom.coord + target_center)
+        and distance(donor_atom.coord, atoms_by_id[neighbor_id].coord) > 1e-12
+        and distance(target_center, atoms_by_id[neighbor_id].coord) > 1e-12
     ]
     if not hydrogen_atoms:
         return None
     best_hydrogen = max(
         hydrogen_atoms,
-        key=lambda hydrogen: geom_angle(donor_atom.coord, hydrogen.coord, target_center),
+        key=lambda hydrogen: _bond_angle(donor_atom.coord, hydrogen.coord, target_center),
     )
     return (
-        geom_angle(donor_atom.coord, best_hydrogen.coord, target_center),
+        _bond_angle(donor_atom.coord, best_hydrogen.coord, target_center),
         best_hydrogen.atom_id,
     )
 
@@ -1057,6 +1190,7 @@ def _with_occlusion_rejections(
     coords = [atom.coord for atom in atoms]
     coord_index = {atom.atom_id: idx for idx, atom in enumerate(atoms)}
     bonds_by_id = {atom.atom_id: atom.bonds for atom in atoms}
+    hydrogen_atom_ids = {atom.atom_id for atom in atoms if atom.element in {"H", "D", "T"}}
     features_by_id = {feature.feature_id: feature for feature in features}
     ignored_indices = {
         idx for idx, atom in enumerate(atoms) if atom.metadata.get("ignored_by_template")
@@ -1067,6 +1201,9 @@ def _with_occlusion_rejections(
     for candidate in candidates:
         if candidate.rejection_reason:
             continue
+        if candidate.interaction_type == "amide_bridge":
+            # Both actual hydrogen-bond legs have already passed occlusion.
+            continue
 
         endpoints = _occlusion_endpoints(
             candidate, coord_index, coords, features_by_id, bonds_by_id, include_multi_atom
@@ -1074,6 +1211,12 @@ def _with_occlusion_rejections(
         if endpoints is None:
             continue
         start, end, ignored_atom_ids = endpoints
+        if candidate.interaction_type == "hydrophobic" and len(candidate.atom_ids) == 2:
+            # An endpoint's C-H group supplies the hydrophobic contact; its own
+            # hydrogen is not an intervening obstruction. Keep unrelated H and
+            # every non-participating heavy atom subject to the existing check.
+            for atom_id in candidate.atom_ids:
+                ignored_atom_ids.update(hydrogen_atom_ids.intersection(bonds_by_id.get(atom_id, ())))
 
         if is_occluded(
             start,
@@ -1113,6 +1256,11 @@ def _occlusion_endpoints(
             ignored_atom_ids.add(candidate.metadata[metadata_key])
     ignored_atom_ids.update(candidate.metadata.get("hydrogen_atom_ids", ()))
 
+    measured_pair = candidate.metadata.get("distance_atom_ids")
+    if measured_pair and all(atom_id in coord_index for atom_id in measured_pair):
+        return (coords[coord_index[measured_pair[0]]], coords[coord_index[measured_pair[1]]],
+                ignored_atom_ids)
+
     if len(candidate.atom_ids) == 2:
         start_id, end_id = candidate.atom_ids
         if start_id not in coord_index or end_id not in coord_index:
@@ -1129,7 +1277,8 @@ def _occlusion_endpoints(
     ignored_atom_ids.update(second.atom_ids)
     for atom_id in tuple(ignored_atom_ids):
         ignored_atom_ids.update(bonds_by_id.get(atom_id, ()))
-    return first.center, second.center, ignored_atom_ids
+    start = tuple(candidate.metadata["amide_center"]) if candidate.interaction_type == "amide_pi" else first.center
+    return start, second.center, ignored_atom_ids
 
 
 def _nearby_feature_pairs(features: list[FeatureRecord], cutoff: float):
@@ -1140,22 +1289,22 @@ def _nearby_feature_pairs(features: list[FeatureRecord], cutoff: float):
 
 def _normal_angle(normal_a, normal_b) -> float:
     if normal_a is None or normal_b is None:
-        return 0.0
+        return float("nan")
     dot = abs(sum(normal_a[i] * normal_b[i] for i in range(3)))
     norm_a = sqrt(sum(v * v for v in normal_a))
     norm_b = sqrt(sum(v * v for v in normal_b))
-    if norm_a == 0.0 or norm_b == 0.0:
-        return 0.0
+    if not isfinite(norm_a + norm_b) or norm_a <= 1e-12 or norm_b <= 1e-12:
+        return float("nan")
     value = max(-1.0, min(1.0, dot / (norm_a * norm_b)))
     return degrees(acos(value))
 
 
 def _point_ring_angle(point: FeatureRecord, ring: FeatureRecord) -> float:
     if ring.normal is None:
-        return 0.0
+        return float("nan")
     vector = tuple(point.center[i] - ring.center[i] for i in range(3))
     angle = _plane_normal_angle(ring.normal, vector)
-    return 0.0 if angle is None else angle
+    return float("nan") if angle is None else angle
 
 
 _DETECTORS: dict[str, Callable[[DetectorContext, dict], list[CandidateInteraction]]] = {
@@ -1169,7 +1318,6 @@ _DETECTORS: dict[str, Callable[[DetectorContext, dict], list[CandidateInteractio
     "aliphatic_pi_stack": _aliphatic_pi_stack_candidates,
     "aliphatic_stack": _aliphatic_stack_candidates,
     "cation_pi": _cation_pi_candidates,
-    "anion_pi": _anion_pi_candidates,
     "anion_aromatic_edge": _anion_aromatic_edge_candidates,
     "hbond_pi": _hbond_pi_candidates,
     "n_pi_star": _n_pi_star_candidates,
@@ -1181,4 +1329,5 @@ _DETECTORS: dict[str, Callable[[DetectorContext, dict], list[CandidateInteractio
     "tetrel_bond": _tetrel_bond_candidates,
     "ch_pi": _ch_pi_candidates,
     "hydrophobic": _hydrophobic_candidates,
+    "hydrophobic_enclosure": _hydrophobic_enclosure_candidates,
 }

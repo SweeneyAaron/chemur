@@ -152,6 +152,7 @@ def add_sdf_ligands(
                     "sdf_molecule_index": ligand.molecule_index,
                     "sdf_atom_index": rdkit_idx,
                     "sdf_name": ligand.raw_name,
+                    "structure_formal_charge": int(rdkit_atom.GetFormalCharge()),
                 },
             )
             atoms.append(atom)
@@ -205,6 +206,14 @@ def add_sdf_ligands(
             smiles=ligand.smiles,
             source="sdf",
         )
+        # Typing uses the direct SDF correspondence above. Serialized chemistry
+        # needs a separate index translation: canonical SMILES traversal need
+        # not follow the atom ordering deposited in the SDF.
+        from .assemblies import _serialize_molecule
+
+        serialized_smiles, serialized_mapping = _serialize_molecule(molecule, heavy_mapping)
+        component.metadata["smiles"] = serialized_smiles
+        component.metadata["template_mapping"] = serialized_mapping
         smiles_by_component_id[component_id] = ligand.smiles
 
     return smiles_by_component_id

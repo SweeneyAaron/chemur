@@ -35,15 +35,21 @@ if hasattr(_core, "plane_fit"):
 else:
     from ._fallback_core import plane_fit, plane_normal  # noqa: F811
 
+# Source updates must remain usable before an installed extension is rebuilt.
+if hasattr(_core, "is_enclosed"):
+    is_enclosed = _core.is_enclosed
+else:
+    from ._fallback_core import is_enclosed
+
 __all__ = [
     "USING_CPP_CORE",
     "angle",
     "centroid",
     "distance",
+    "is_enclosed",
     "is_occluded",
     "neighbor_pairs",
     "plane_fit",
     "plane_normal",
     "point_plane_offset",
 ]
-

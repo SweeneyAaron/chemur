@@ -16,6 +16,44 @@ class CcdSmilesResult:
     missing: dict[str, str]
 
 
+@dataclass(frozen=True)
+class CcdTemplateResult:
+    templates: dict[str, dict]
+    missing: dict[str, str]
+
+
+def fetch_missing_ligand_templates_from_ccd(
+    components: list[ComponentRecord], *, timeout: float = 10.0,
+) -> CcdTemplateResult:
+    """Fetch each distinct ligand dictionary once, retaining named chemistry."""
+    templates, missing = {}, {}
+    for name in sorted({component.name.upper() for component in components
+                        if component.molecule_type == "ligand"}):
+        try:
+            templates[name] = fetch_ccd_template(name, timeout=timeout)
+        except Exception as exc:
+            missing[name] = str(exc)
+    return CcdTemplateResult(templates=templates, missing=missing)
+
+
+def fetch_ccd_template(component_id: str, *, timeout: float = 10.0) -> dict:
+    """Return a named atom/bond dictionary and its preferred SMILES, if present."""
+    import gemmi
+    from .connectivity import named_templates_from_cif
+
+    component_id = component_id.strip().upper()
+    text = _download_ccd(component_id, timeout=timeout)
+    templates = {}
+    for block in gemmi.cif.read_string(text):
+        templates.update(named_templates_from_cif(block, source="ccd"))
+    template = templates.get(component_id)
+    if template is None:
+        raise LookupError(f"CCD entry {component_id} does not contain a named atom dictionary")
+    if template.get("error"):
+        raise LookupError(template["error"])
+    return template
+
+
 def fetch_missing_ligand_smiles_from_ccd(
     components: list[ComponentRecord],
     *,
@@ -40,6 +78,15 @@ def fetch_missing_ligand_smiles_from_ccd(
 
 def fetch_ccd_smiles(component_id: str, *, timeout: float = 10.0) -> str:
     component_id = component_id.strip().upper()
+    text = _download_ccd(component_id, timeout=timeout)
+    descriptors = _extract_descriptors(text)
+    smiles = _choose_smiles(descriptors)
+    if smiles is None:
+        raise LookupError(f"CCD entry {component_id} does not contain a SMILES descriptor")
+    return smiles
+
+
+def _download_ccd(component_id: str, *, timeout: float) -> str:
     url = CCD_DOWNLOAD_URL.format(component_id=component_id)
     try:
         with urlopen(url, timeout=timeout) as response:
@@ -49,11 +96,7 @@ def fetch_ccd_smiles(component_id: str, *, timeout: float = 10.0) -> str:
     except URLError as exc:
         raise LookupError(f"Could not fetch CCD entry {component_id}: {exc.reason}") from exc
 
-    descriptors = _extract_descriptors(text)
-    smiles = _choose_smiles(descriptors)
-    if smiles is None:
-        raise LookupError(f"CCD entry {component_id} does not contain a SMILES descriptor")
-    return smiles
+    return text
 
 
 def _choose_smiles(descriptors: list[dict[str, str]]) -> str | None:
@@ -147,4 +190,3 @@ def _split_cif_row(row_text: str) -> list[str]:
 def _starts_new_block(line: str) -> bool:
     stripped = line.strip()
     return stripped == "loop_" or stripped.startswith("data_") or stripped.startswith("_")
-

@@ -1,5 +1,7 @@
 from math import cos, pi, sin
 
+import pytest
+
 from chemur import core
 
 
@@ -16,7 +18,7 @@ def test_plane_fit_reports_planarity():
     _, puckered = core.plane_fit(_ring(1.46, 0.25))
 
     assert flat == 0.0
-    assert puckered == 0.25
+    assert puckered == pytest.approx(0.25)
 
 
 def test_plane_fit_normal_does_not_depend_on_atom_order():
@@ -81,4 +83,3 @@ def test_occlusion():
         {0, 2},
         0.5,
     )
-

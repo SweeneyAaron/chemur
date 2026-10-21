@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any
 
 from .interaction_types import STACKING_TYPES as _STACKING_TYPES, canonical_family
+from .interaction_projection import project_interactions_for_scoring
+from .ligand_selection import resolve_ligand
 from .models import AnalysisResult, AssignedInteraction, AtomRecord, ComponentRecord
 
 COSPLIF_VERSION = "cosplif_context_v1"
@@ -197,14 +199,23 @@ def build_cosplif_tokens(
     components_by_id = {
         component.component_id: component for component in analysis_result.components
     }
+    try:
+        selection = resolve_ligand(analysis_result, ligand_id)
+    except ValueError:
+        return {}
+    ligand_ids = set(selection.atom_ids)
+    target_ids = set(atoms_by_id) - ligand_ids
+    features_by_id = {feature.feature_id: feature for feature in analysis_result.features}
     tokens: Counter[str] = Counter()
-    for interaction in analysis_result.interactions:
-        if ligand_id not in interaction.component_ids:
+    for interaction in project_interactions_for_scoring(analysis_result.interactions):
+        if (not selection.touches(interaction, external=True)
+                or selection.has_boundary_feature(interaction, features_by_id)):
             continue
         target_component_id = _choose_target_component_id(
             interaction,
             ligand_id=ligand_id,
             components_by_id=components_by_id,
+            ligand_component_ids=set(selection.component_ids),
         )
         if target_component_id is None:
             continue
@@ -216,7 +227,7 @@ def build_cosplif_tokens(
             atom_id
             for atom_id in interaction.atom_ids
             if atoms_by_id.get(atom_id) is not None
-            and atoms_by_id[atom_id].component_id == ligand_id
+            and atom_id in ligand_ids
         )
         target_atom_ids = tuple(
             atom_id
@@ -246,6 +257,7 @@ def build_cosplif_tokens(
                 resolution="ligand",
                 target_moiety="ligand",
                 target_class=None,
+                allowed_atom_ids=ligand_ids,
             )
             for target_atom_id in sorted(set(target_atom_ids)):
                 for resolution in ("specific", "class"):
@@ -257,6 +269,7 @@ def build_cosplif_tokens(
                         resolution=resolution,
                         target_moiety=target_moiety,
                         target_class=target_class,
+                        allowed_atom_ids=target_ids,
                     )
                     token_text = "|".join(
                         (
@@ -301,12 +314,10 @@ def build_ligand_blocks(
 ) -> dict[str, Any]:
     """Build deterministic, non-overlapping chemical blocks for one ligand."""
     atoms_by_id = {atom.atom_id: atom for atom in analysis_result.atoms}
-    components_by_id = {
-        component.component_id: component for component in analysis_result.components
-    }
-    component = components_by_id.get(ligand_id)
     warnings: list[str] = []
-    if component is None:
+    try:
+        selection = resolve_ligand(analysis_result, ligand_id)
+    except ValueError:
         return {
             "version": LIGAND_BLOCKS_VERSION,
             "ligand_id": ligand_id,
@@ -314,6 +325,12 @@ def build_ligand_blocks(
             "blocks": [],
             "warnings": [f"Ligand component not found: {ligand_id}"],
         }
+    ligand_id = selection.ligand_id
+    component = selection.as_component(analysis_result.components)
+    # Chemistry blocks and their local environments stop at attachment boundaries.
+    atoms_by_id = {atom_id: atoms_by_id[atom_id] for atom_id in selection.atom_ids
+                   if atom_id in atoms_by_id}
+    features_by_id = {feature.feature_id: feature for feature in analysis_result.features}
 
     heavy_ids = {
         atom_id
@@ -379,8 +396,11 @@ def build_ligand_blocks(
         atoms_by_id,
         bond_orders,
         rdkit_context,
-        analysis_result.interactions,
+        [interaction for interaction in project_interactions_for_scoring(analysis_result.interactions)
+         if selection.touches(interaction, external=True)
+         and not selection.has_boundary_feature(interaction, features_by_id)],
         ligand_id=ligand_id,
+        ligand_atom_ids=set(selection.atom_ids),
     )
     assigned = {atom_id for block in blocks for atom_id in block["atom_ids"]}
     if assigned != heavy_ids:
@@ -433,11 +453,12 @@ def _ring_systems(
     atoms_by_id: dict[int, AtomRecord],
 ) -> list[set[int]]:
     rings = [
-        set(int(atom_id) for atom_id in ring if int(atom_id) in heavy_ids)
+        set(int(atom_id) for atom_id in ring)
         for ring in component.metadata.get("template_rings", [])
+        if set(int(atom_id) for atom_id in ring).issubset(heavy_ids)
     ]
     rings = [ring for ring in rings if len(ring) >= 3]
-    if not rings:
+    if not rings and not component.metadata.get("template_rings"):
         aromatic_ids = {
             atom_id
             for atom_id in heavy_ids
@@ -711,6 +732,7 @@ def _finalize_ligand_blocks(
     interactions: list[AssignedInteraction],
     *,
     ligand_id: str,
+    ligand_atom_ids: set[int],
 ) -> list[dict[str, Any]]:
     blocks: list[dict[str, Any]] = []
     for index, seed in enumerate(
@@ -725,6 +747,7 @@ def _finalize_ligand_blocks(
             interactions,
             atoms_by_id,
             ligand_id=ligand_id,
+            all_ligand_atom_ids=ligand_atom_ids,
         )
         blocks.append(
             {
@@ -760,11 +783,10 @@ def _block_interaction_counts(
     atoms_by_id: dict[int, AtomRecord],
     *,
     ligand_id: str,
+    all_ligand_atom_ids: set[int],
 ) -> dict[str, float]:
     counts: Counter[str] = Counter()
     for interaction in interactions:
-        if ligand_id not in interaction.component_ids:
-            continue
         family = _canonical_family(interaction.interaction_type)
         if family is None:
             continue
@@ -772,7 +794,7 @@ def _block_interaction_counts(
             atom_id
             for atom_id in interaction.atom_ids
             if atoms_by_id.get(atom_id) is not None
-            and atoms_by_id[atom_id].component_id == ligand_id
+            and atom_id in all_ligand_atom_ids
         }
         if block_atom_ids & ligand_atom_ids:
             counts[family] += 1
@@ -964,6 +986,40 @@ def _rdkit_fingerprint_context(
             continue
     if not template_index_by_atom_id:
         return None
+    ligand_ids = set(component.atom_ids)
+    if set(template_index_by_atom_id) - ligand_ids:
+        # Assembly chemistry can include real polymer context for correct atom
+        # typing. Morgan's fromAtoms limits centers, not traversed neighbors, so
+        # passing that complete molecule would fingerprint the receptor too.
+        # Replace every attachment with a generic terminal dummy, retaining the
+        # ligand's product valence while discarding receptor-specific chemistry.
+        keep = {idx for atom_id, idx in template_index_by_atom_id.items() if atom_id in ligand_ids}
+        keep.update(atom.GetIdx() for atom in molecule.GetAtoms()
+                    if atom.GetAtomicNum() == 1
+                    and any(neighbor.GetIdx() in keep for neighbor in atom.GetNeighbors()))
+        graph = Chem.RWMol()
+        index_map = {idx: graph.AddAtom(Chem.Atom(molecule.GetAtomWithIdx(idx))) for idx in sorted(keep)}
+        for bond in molecule.GetBonds():
+            first, second = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
+            if first in keep and second in keep:
+                graph.AddBond(index_map[first], index_map[second], bond.GetBondType())
+            elif (first in keep) != (second in keep):
+                inside = first if first in keep else second
+                stub = Chem.Atom(0)
+                stub.SetNoImplicit(True)
+                stub_idx = graph.AddAtom(stub)
+                graph.AddBond(index_map[inside], stub_idx, bond.GetBondType())
+        try:
+            molecule = graph.GetMol()
+            Chem.SanitizeMol(molecule)
+        except Exception:
+            # A cut through an aromatic group has no isolated ligand molecule;
+            # use the bounded annotation-based fingerprint in that case.
+            return None
+        template_index_by_atom_id = {
+            atom_id: index_map[idx] for atom_id, idx in template_index_by_atom_id.items()
+            if atom_id in ligand_ids
+        }
     return molecule, template_index_by_atom_id
 
 
@@ -1582,6 +1638,7 @@ def _atom_environment(
     resolution: str,
     target_moiety: str,
     target_class: str | None,
+    allowed_atom_ids: set[int] | None = None,
 ) -> str:
     visited = {atom_id}
     queue: deque[tuple[int, int]] = deque([(atom_id, 0)])
@@ -1605,6 +1662,8 @@ def _atom_environment(
             continue
         for neighbor_id in sorted(atom.bonds):
             if neighbor_id in visited or neighbor_id not in atoms_by_id:
+                continue
+            if allowed_atom_ids is not None and neighbor_id not in allowed_atom_ids:
                 continue
             visited.add(neighbor_id)
             queue.append((neighbor_id, depth + 1))
@@ -1662,8 +1721,11 @@ def _choose_target_component_id(
     *,
     ligand_id: str,
     components_by_id: dict[str, ComponentRecord],
+    ligand_component_ids: set[str] | None = None,
 ) -> str | None:
-    candidates = [component_id for component_id in interaction.component_ids if component_id != ligand_id]
+    ligand_components = ligand_component_ids or {ligand_id}
+    candidates = [component_id for component_id in interaction.component_ids
+                  if component_id not in ligand_components]
     if not candidates:
         return None
     priority = {"protein": 0, "nucleotide": 1, "ion": 2, "solvent": 3}
@@ -1780,15 +1842,16 @@ def _role_key(
     ligand_atom_ids: set[int],
     target_atom_ids: set[int],
 ) -> str:
-    ligand_is_donor = False
-    target_is_donor = False
-    for demand in interaction.resource_demands:
-        if demand.resource_type not in {"donor", "halogen_donor"}:
-            continue
-        if demand.atom_id in ligand_atom_ids:
-            ligand_is_donor = True
-        if demand.atom_id in target_atom_ids:
-            target_is_donor = True
+    if interaction.interaction_type == "solvent_bridge" and "leg_donor_atom_ids" in interaction.metadata:
+        donor_atom_ids = {int(atom_id) for atom_id in interaction.metadata["leg_donor_atom_ids"]}
+    else:
+        # Keep the demand-based role interpretation for historical bridge data.
+        donor_atom_ids = {
+            demand.atom_id for demand in interaction.resource_demands
+            if demand.resource_type in {"donor", "halogen_donor"}
+        }
+    ligand_is_donor = bool(donor_atom_ids & ligand_atom_ids)
+    target_is_donor = bool(donor_atom_ids & target_atom_ids)
     if ligand_is_donor and target_is_donor:
         return "both_donor"
     if ligand_is_donor:

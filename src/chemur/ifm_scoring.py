@@ -143,14 +143,28 @@ def target_similarity(
     return 0.0
 
 
+def matching_subtype(record: InteractionRecord) -> str | None:
+    """Treat an unspecified hydrophobic subtype as contact only during scoring.
+
+    Keep canonical payloads and historical CoSPLIF hashes unchanged. Other
+    families retain their existing missing-subtype wildcard behavior. Explicit
+    custom hydrophobic subtypes receive partial credit against ordinary contacts.
+    """
+    if record.interaction_subtype:
+        return record.interaction_subtype
+    return "hydrophobic_contact" if record.interaction_family == "hydrophobic" else None
+
+
 def subtype_similarity(
     reference: InteractionRecord,
     query: InteractionRecord,
     config: IFMConfig,
 ) -> float:
-    if reference.interaction_subtype == query.interaction_subtype:
+    ref_subtype = matching_subtype(reference)
+    qry_subtype = matching_subtype(query)
+    if ref_subtype == qry_subtype:
         return 1.0
-    if not reference.interaction_subtype or not query.interaction_subtype:
+    if not ref_subtype or not qry_subtype:
         return 1.0
     return config.matching.subtype_partial_credit
 

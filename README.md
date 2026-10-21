@@ -78,6 +78,10 @@ result.to_json("interactions.json")
 chemur analyze structure.cif --out interactions.json --csv interactions.csv
 ```
 
+CLI reports contain final assignments. Add `--include-raw` to write candidates
+separately to `interactions.raw.json` and `interactions.raw.csv`, alongside the
+final reports. Per-ligand files follow the same convention.
+
 ## Any biomolecule, not just protein–ligand
 
 `analyze` returns **every** interaction it finds in the structure. There is no receptor
@@ -118,18 +122,25 @@ acid interface are detected the same way as in a binding site.
 | Family | Types |
 | --- | --- |
 | Hydrogen bonding | `hbond`, `weak_hbond`, `hbond_pi`, `solvent_bridge`, `amide_bridge` |
-| Electrostatic | `salt_bridge`, `metal_coordination`, `cation_pi`, `anion_pi`, `anion_aromatic_edge` |
+| Electrostatic | `salt_bridge`, `metal_coordination`, `cation_pi`, `anion_aromatic_edge` |
 | Stacking | `pipi_stack`, `aliphatic_pi_stack`, `aliphatic_stack`, `amide_pi`, `ch_pi` |
 | σ-hole | `halogen_bond`, `chalcogen_bond`, `tetrel_bond`, `halogen_pi`, `chalcogen_pi` |
-| Other | `n_pi_star`, `hydrophobic` |
+| Other | `n_pi_star`, `hydrophobic`, `hydrophobic_enclosure` |
 
-`aliphatic_stack` (saturated–saturated ring stacking) ships disabled; enable it in the
-profile. The σ-hole, stacking and n→π\* geometries follow
-[Adhav & Saikrishnan, *ACS Omega* **2023**, 8, 22268](https://doi.org/10.1021/acsomega.3c00205).
+`aliphatic_stack` and `anion_aromatic_edge` ship disabled; enable them in the
+profile. Active `anion_pi` detection has been removed; historical records remain
+readable and scoreable. The [geometry catalogue](docs/geometry.md) documents each
+definition, its primary sources and Chemur's chemical generalisations.
 
 Each type has its own geometric criteria, all adjustable — see
 [docs/cli.md](docs/cli.md) for overriding cutoffs and [docs/chemistry.md](docs/chemistry.md)
-for the chemical gates (such as why an ordinary Met sulfur cannot donate a chalcogen bond).
+for chemical eligibility and preparation diagnostics. The engine and ChimeraX use
+the same versioned parameter catalogue; native results retain effective settings.
+
+`hydrophobic_enclosure` groups valid hydrophobic contacts that surround a ligand atom
+in three dimensions. Enabled by default, it replaces the supporting pair contacts
+in assigned results; raw candidates retain those pairs and the replacement reason.
+It inherits the ordinary hydrophobic distance cutoff (4 Å by default).
 
 ## Ligand chemistry
 
@@ -186,7 +197,8 @@ Analyses each frame and reports per-interaction occupancy and time series.
 ## Documentation
 
 - [docs/cli.md](docs/cli.md) — full command-line reference
-- [docs/chemistry.md](docs/chemistry.md) — templates, hydrogen policy, σ-hole activation, profiles
+- [docs/chemistry.md](docs/chemistry.md) — templates, hydrogen policy and preparation
+- [docs/geometry.md](docs/geometry.md) — geometry defaults, endpoints and primary sources
 
 ## Development
 

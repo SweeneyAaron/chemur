@@ -115,23 +115,27 @@ def _phosphate_ligand():
     return atoms, components
 
 
-def test_symmetric_phosphate_maps_without_false_ambiguity():
-    # The phosphate's four terminal oxygens are topologically identical (each a
-    # degree-1 O on P) but chemically distinct in the SMILES (one =O, three -OH).
-    # This used to be rejected as an "ambiguous mapping"; it must now map cleanly.
+def test_protonated_phosphate_without_hydrogen_evidence_is_ambiguous():
+    # OH and bare O are different physical sites, even if group totals agree.
     atoms, components = _phosphate_ligand()
-
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")  # any RuntimeWarning (a skip) fails the test
+    with pytest.warns(RuntimeWarning, match="Ambiguous chemistry"):
         apply_ligand_smiles_templates(atoms, components, {"PO4": "OP(=O)(O)O"})
+    assert components[0].metadata["ignored_by_template"] is True
+    assert components[0].metadata["template_mapping_status"] == "ambiguous"
+
+
+def test_resonance_equivalent_deprotonated_phosphate_maps():
+    atoms, components = _phosphate_ligand()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        apply_ligand_smiles_templates(atoms, components, {"PO4": "[O-]P(=O)([O-])[O-]"})
 
     assert "ignored_by_template" not in components[0].metadata
-    assert components[0].metadata["smiles"] == "OP(=O)(O)O"
+    assert components[0].metadata["template_mapping_status"] == "equivalent"
     oxygens = [atom for atom in atoms if atom.element == "O"]
-    # Group-level chemistry is mapping-independent: four neutral acceptor oxygens.
     assert sum(atom.acceptor_capacity for atom in oxygens) == 8
-    assert sum(atom.formal_charge for atom in oxygens) == 0
-    assert sum(atom.donor_capacity for atom in oxygens) == 3  # the three -OH oxygens
+    assert sum(atom.formal_charge for atom in oxygens) == -3
+    assert sum(atom.donor_capacity for atom in oxygens) == 0
 
 
 def test_symmetric_carboxylate_maps_and_preserves_net_charge():

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from math import acos, cos, degrees, pi, sqrt
+from math import acos, degrees, isfinite, sqrt
 from typing import Iterable
 
 Vec3 = tuple[float, float, float]
@@ -33,130 +33,99 @@ def centroid(points: Iterable[Vec3]) -> Vec3:
 def plane_fit(points: Iterable[Vec3]) -> tuple[Vec3, float]:
     """Best-fit plane through ``points``, as ``(unit normal, RMS deviation)``.
 
-    The normal is the eigenvector of the smallest eigenvalue of the covariance
-    matrix. Unlike a cross product of the first three points it therefore does
-    not depend on which atoms happen to come first, which matters for puckered
-    saturated rings and for the fused 9-atom purine feature -- in neither case
-    do three atoms define the mean plane.
-
-    The returned RMS deviation is the planarity of the point set: ~0 for an
-    aromatic ring, distinctly non-zero for a chair cyclohexane.
+    Repeated smallest covariance eigenvalues describe several equally good
+    planes, not necessarily a planar point set. Select a reproducible normal
+    from that eigenspace and measure the deviation from the returned plane.
+    Keep the algorithm and tolerances in sync with cpp/chemur_core.cpp.
     """
     pts = list(points)
     if len(pts) < 3:
         return (0.0, 0.0, 1.0), 0.0
+    if all(point[i] == pts[0][i] for point in pts[1:] for i in range(3)):
+        # Averaging repeated decimal coordinates can introduce a rounding
+        # residual even though the point set has exactly zero extent.
+        return (0.0, 0.0, 1.0), 0.0
 
     center = centroid(pts)
-    xx = xy = xz = yy = yz = zz = 0.0
-    for point in pts:
-        dx = point[0] - center[0]
-        dy = point[1] - center[1]
-        dz = point[2] - center[2]
-        xx += dx * dx
-        xy += dx * dy
-        xz += dx * dz
-        yy += dy * dy
-        yz += dy * dz
-        zz += dz * dz
+    centered = [tuple(point[i] - center[i] for i in range(3)) for point in pts]
+    coordinate_scale = max(abs(value) for point in centered for value in point)
+    if coordinate_scale == 0.0:
+        return (0.0, 0.0, 1.0), 0.0
+    scaled = [tuple(value / coordinate_scale for value in point) for point in centered]
+    covariance = [[0.0] * 3 for _ in range(3)]
+    for point in scaled:
+        for i in range(3):
+            for j in range(i, 3):
+                covariance[i][j] += point[i] * point[j]
+    matrix_scale = max(covariance[i][i] for i in range(3))
+    for i in range(3):
+        for j in range(i, 3):
+            covariance[i][j] /= matrix_scale
+            covariance[j][i] = covariance[i][j]
 
-    covariance = (xx, xy, xz, yy, yz, zz)
-    smallest = _smallest_eigenvalue(covariance)
-    normal = _null_space_vector(covariance, smallest)
-    if normal is None:
-        # Collinear or coincident points: the plane is undefined, so fall back
-        # to the three-point normal rather than returning an arbitrary axis.
-        return _three_point_normal(pts), 0.0
-    return normal, sqrt(max(0.0, smallest) / len(pts))
+    eigenvalues, eigenvectors = _symmetric_eigensystem(covariance)
+    normal = _minimum_eigenspace_normal(eigenvalues, eigenvectors)
+    squared_deviation = 0.0
+    for point in scaled:
+        projection = sum(point[i] * normal[i] for i in range(3))
+        squared_deviation += projection * projection
+    return normal, coordinate_scale * sqrt(squared_deviation / len(pts))
 
 
 def plane_normal(points: Iterable[Vec3]) -> Vec3:
     return plane_fit(points)[0]
 
 
-def _three_point_normal(pts: list[Vec3]) -> Vec3:
-    if len(pts) < 3:
-        return (0.0, 0.0, 1.0)
-    p0, p1, p2 = pts[0], pts[1], pts[2]
-    u = tuple(p1[i] - p0[i] for i in range(3))
-    v = tuple(p2[i] - p0[i] for i in range(3))
-    n = (
-        u[1] * v[2] - u[2] * v[1],
-        u[2] * v[0] - u[0] * v[2],
-        u[0] * v[1] - u[1] * v[0],
-    )
-    norm = sqrt(sum(x * x for x in n))
-    if norm == 0.0:
-        return (0.0, 0.0, 1.0)
-    return tuple(x / norm for x in n)  # type: ignore[return-value]
-
-
-def _smallest_eigenvalue(covariance: tuple[float, ...]) -> float:
-    """Smallest eigenvalue of the symmetric 3x3 matrix (xx, xy, xz, yy, yz, zz).
-
-    Closed-form trigonometric solution of the characteristic cubic -- no
-    iteration, and no numpy dependency in the fallback path.
-    """
-    xx, xy, xz, yy, yz, zz = covariance
-    off_diagonal = xy * xy + xz * xz + yz * yz
-    if off_diagonal == 0.0:
-        return min(xx, yy, zz)
-
-    q = (xx + yy + zz) / 3.0
-    p2 = (xx - q) ** 2 + (yy - q) ** 2 + (zz - q) ** 2 + 2.0 * off_diagonal
-    p = sqrt(p2 / 6.0)
-    if p == 0.0:
-        return q
-
-    b00 = (xx - q) / p
-    b11 = (yy - q) / p
-    b22 = (zz - q) / p
-    b01 = xy / p
-    b02 = xz / p
-    b12 = yz / p
-    determinant = (
-        b00 * (b11 * b22 - b12 * b12)
-        - b01 * (b01 * b22 - b12 * b02)
-        + b02 * (b01 * b12 - b11 * b02)
-    )
-    r = max(-1.0, min(1.0, determinant / 2.0))
-    phi = acos(r) / 3.0
-    return q + 2.0 * p * cos(phi + 2.0 * pi / 3.0)
-
-
-def _null_space_vector(covariance: tuple[float, ...], eigenvalue: float) -> Vec3 | None:
-    """Unit eigenvector of ``covariance`` for ``eigenvalue``, or None if degenerate."""
-    xx, xy, xz, yy, yz, zz = covariance
-    rows = (
-        (xx - eigenvalue, xy, xz),
-        (xy, yy - eigenvalue, yz),
-        (xz, yz, zz - eigenvalue),
-    )
-    best: Vec3 | None = None
-    best_norm = 0.0
-    for i in range(3):
-        for j in range(i + 1, 3):
-            a, b = rows[i], rows[j]
-            candidate = (
-                a[1] * b[2] - a[2] * b[1],
-                a[2] * b[0] - a[0] * b[2],
-                a[0] * b[1] - a[1] * b[0],
-            )
-            norm = sqrt(sum(v * v for v in candidate))
-            if norm > best_norm:
-                best_norm = norm
-                best = candidate  # type: ignore[assignment]
-    if best is None or best_norm < 1e-12:
-        return None
-
-    unit = tuple(v / best_norm for v in best)
-    # The eigenvector sign is arbitrary. Every consumer folds it with abs(), but
-    # pinning it keeps the stored normal reproducible across atom orderings.
-    for value in unit:
-        if abs(value) > 1e-9:
-            if value < 0.0:
-                unit = tuple(-v for v in unit)
+def _symmetric_eigensystem(matrix: list[list[float]]) -> tuple[list[float], list[list[float]]]:
+    """Jacobi eigenvalues and column eigenvectors of a scaled symmetric 3x3 matrix."""
+    vectors = [[float(i == j) for j in range(3)] for i in range(3)]
+    for _ in range(32):
+        if max(abs(matrix[i][j]) for i, j in ((0, 1), (0, 2), (1, 2))) <= 1e-14:
             break
-    return unit  # type: ignore[return-value]
+        for p, q in ((0, 1), (0, 2), (1, 2)):
+            off_diagonal = matrix[p][q]
+            if abs(off_diagonal) <= 1e-14:
+                continue
+            tau = (matrix[q][q] - matrix[p][p]) / (2.0 * off_diagonal)
+            tangent = (1.0 if tau >= 0.0 else -1.0) / (abs(tau) + sqrt(1.0 + tau * tau))
+            cosine = 1.0 / sqrt(1.0 + tangent * tangent)
+            sine = tangent * cosine
+            matrix[p][p] -= tangent * off_diagonal
+            matrix[q][q] += tangent * off_diagonal
+            matrix[p][q] = matrix[q][p] = 0.0
+            for i in range(3):
+                if i != p and i != q:
+                    ip, iq = matrix[i][p], matrix[i][q]
+                    matrix[i][p] = matrix[p][i] = cosine * ip - sine * iq
+                    matrix[i][q] = matrix[q][i] = sine * ip + cosine * iq
+                ip, iq = vectors[i][p], vectors[i][q]
+                vectors[i][p] = cosine * ip - sine * iq
+                vectors[i][q] = sine * ip + cosine * iq
+    return [matrix[i][i] for i in range(3)], vectors
+
+
+def _minimum_eigenspace_normal(values: list[float], vectors: list[list[float]]) -> Vec3:
+    smallest = min(values)
+    tolerance = 1e-12 * max(1.0, max(abs(value) for value in values))
+    columns = [i for i, value in enumerate(values) if value - smallest <= tolerance]
+    # Project each coordinate axis into the minimum eigenspace. The largest
+    # projection is stable even when an axis is almost perpendicular to it;
+    # ties prefer Z, then Y, then X, including the fully isotropic case.
+    best = (0.0, 0.0, 0.0)
+    best_norm2 = -1.0
+    for axis in (2, 1, 0):
+        projected = tuple(sum(vectors[i][j] * vectors[axis][j] for j in columns) for i in range(3))
+        norm2 = sum(value * value for value in projected)
+        if norm2 > best_norm2 + 1e-12:
+            best = projected
+            best_norm2 = norm2
+    normal = tuple(value / sqrt(best_norm2) for value in best)
+    for value in normal:
+        if abs(value) > 1e-12:
+            if value < 0.0:
+                normal = tuple(-component for component in normal)
+            break
+    return normal  # type: ignore[return-value]
 
 
 def point_plane_offset(point: Vec3, center: Vec3, normal: Vec3) -> float:
@@ -192,6 +161,58 @@ def neighbor_pairs(coords: list[Vec3], cutoff: float) -> list[tuple[int, int, fl
                     if d2 <= cutoff2:
                         pairs.append((i, j, sqrt(d2)))
     return pairs
+
+
+def is_enclosed(center: Vec3, neighbor_coords: list[Vec3]) -> bool:
+    """Whether neighbors surround ``center`` strictly in three dimensions.
+
+    A closed hemisphere containing every contact direction rules out enclosure.
+    Such a hemisphere has a boundary through two independent directions, so
+    testing their cross products avoids constructing a full convex hull.
+    Zero-length directions do not contribute; nonfinite coordinates reject the
+    geometry. Keep this algorithm and its tolerances in sync with the C++ core.
+    """
+    if not all(isfinite(value) for value in center):
+        return False
+    directions: list[Vec3] = []
+    for point in neighbor_coords:
+        delta = tuple(point[i] - center[i] for i in range(3))
+        if not all(isfinite(value) for value in delta):
+            return False
+        scale = max(abs(value) for value in delta)
+        if scale == 0.0:
+            continue
+        scaled = tuple(value / scale for value in delta)
+        norm = sqrt(sum(value * value for value in scaled))
+        directions.append(tuple(value / norm for value in scaled))
+    if len(directions) < 4:
+        return False
+
+    tested_pair = False
+    for i, first in enumerate(directions):
+        for second in directions[i + 1 :]:
+            normal = (
+                first[1] * second[2] - first[2] * second[1],
+                first[2] * second[0] - first[0] * second[2],
+                first[0] * second[1] - first[1] * second[0],
+            )
+            norm = sqrt(sum(value * value for value in normal))
+            if norm <= 1e-12:
+                continue
+            tested_pair = True
+            # Comparing against the scaled tolerance is equivalent to using
+            # a unit normal, without another normalization of every component.
+            tolerance = 1e-9 * norm
+            positive = negative = False
+            for direction in directions:
+                projection = sum(direction[axis] * normal[axis] for axis in range(3))
+                positive = positive or projection > tolerance
+                negative = negative or projection < -tolerance
+                if positive and negative:
+                    break
+            if not (positive and negative):
+                return False
+    return tested_pair
 
 
 def is_occluded(
@@ -232,4 +253,3 @@ def _neighbor_keys(key: tuple[int, int, int]):
         for dy in (-1, 0, 1):
             for dz in (-1, 0, 1):
                 yield (key[0] + dx, key[1] + dy, key[2] + dz)
-

@@ -80,11 +80,13 @@ def test_hbond_candidate_requires_explicit_hydrogen_geometry():
             "B:LIG:2",
             "ligand",
             acceptor_capacity=2,
+            bonds=(3,),
         ),
     ]
+    atoms.append(AtomRecord(3, "C1", "C", (4.03, 0., 0.), "LIG", "2", "B", "B:LIG:2", "ligand", bonds=(2,)))
     components = [
         ComponentRecord("A:ASN:1", "ASN", "A", "1", "protein", (0, 1)),
-        ComponentRecord("B:LIG:2", "LIG", "B", "2", "ligand", (2,)),
+        ComponentRecord("B:LIG:2", "LIG", "B", "2", "ligand", (2, 3)),
     ]
 
     features = perceive_features(atoms, components)

@@ -56,7 +56,7 @@ INTERACTION_TYPES: tuple[InteractionType, ...] = (
         name="metal_coordination",
         family=FAMILY_METAL_COORDINATION,
         label="Metal coordination",
-        cutoffs=("distance",),
+        cutoffs=('min_distance', 'distance', 'alkali_min_distance', 'alkali_distance'),
         aliases={"distance": ("--metal-distance",)},
     ),
     InteractionType(
@@ -70,13 +70,13 @@ INTERACTION_TYPES: tuple[InteractionType, ...] = (
         name="amide_bridge",
         family=FAMILY_HYDROGEN_BOND,
         label="Amide bridge",
-        cutoffs=("distance", "angle"),
+        cutoffs=('min_residue_separation',),
     ),
     InteractionType(
         name="hbond",
         family=FAMILY_HYDROGEN_BOND,
         label="Hydrogen bond",
-        cutoffs=("distance", "angle", "sulfur_distance", "short_distance"),
+        cutoffs=('min_distance', 'distance', 'hydrogen_min_distance', 'hydrogen_distance', 'angle', 'acceptor_angle', 'water_distance', 'water_angle'),
         aliases={"distance": ("--hb-distance",), "angle": ("--hb-angle",)},
     ),
     InteractionType(
@@ -96,7 +96,7 @@ INTERACTION_TYPES: tuple[InteractionType, ...] = (
         name="pipi_stack",
         family=FAMILY_AROMATIC_STACKING,
         label="Pi-pi stack",
-        cutoffs=("distance", "angle", "offset"),
+        cutoffs=('distance', 'angle', 'min_perpendicular_angle', 'offset'),
         aliases={
             "distance": ("--pipi-distance", "--pi-pi-distance"),
             "angle": ("--pipi-angle", "--pi-pi-angle"),
@@ -107,7 +107,7 @@ INTERACTION_TYPES: tuple[InteractionType, ...] = (
         name="aliphatic_pi_stack",
         family=FAMILY_RING_STACKING,
         label="Aliphatic-aromatic ring stack",
-        cutoffs=("distance", "angle", "offset"),
+        cutoffs=('distance', 'angle', 'plane_separation'),
     ),
     InteractionType(
         name="aliphatic_stack",
@@ -119,13 +119,7 @@ INTERACTION_TYPES: tuple[InteractionType, ...] = (
         name="cation_pi",
         family=FAMILY_CATION_PI,
         label="Cation-pi",
-        cutoffs=("distance", "angle", "offset"),
-    ),
-    InteractionType(
-        name="anion_pi",
-        family=FAMILY_IONIC,
-        label="Anion-pi",
-        cutoffs=("distance", "angle", "offset"),
+        cutoffs=('distance', 'offset', 'tertiary_amine_angle'),
     ),
     InteractionType(
         name="anion_aromatic_edge",
@@ -137,61 +131,66 @@ INTERACTION_TYPES: tuple[InteractionType, ...] = (
         name="hbond_pi",
         family=FAMILY_HYDROGEN_BOND,
         label="H-bond-pi",
-        cutoffs=("distance", "angle", "donor_angle", "offset"),
+        cutoffs=('hydrogen_distance', 'angle', 'donor_angle'),
         aliases={
-            "distance": ("--hb-pi-distance",),
+            "hydrogen_distance": ("--hb-pi-hydrogen-distance",),
             "angle": ("--hb-pi-angle",),
             "donor_angle": ("--hb-pi-donor-angle",),
-            "offset": ("--hb-pi-offset",),
         },
     ),
     InteractionType(
         name="n_pi_star",
         family=FAMILY_N_PI_STAR,
         label="n->pi*",
-        cutoffs=("distance", "min_angle", "angle", "approach_angle"),
+        cutoffs=('distance', 'min_angle', 'angle', 'min_residue_separation'),
     ),
     InteractionType(
         name="amide_pi",
         family=FAMILY_AROMATIC_STACKING,
         label="Amide-pi",
-        cutoffs=("distance", "angle", "offset"),
+        cutoffs=('distance', 'angle', 'approach_angle'),
     ),
     InteractionType(
         name="halogen_bond",
         family=FAMILY_HALOGEN_BOND,
         label="Halogen bond",
-        cutoffs=("distance", "angle"),
+        cutoffs=('distance', 'angle', 'acceptor_min_angle', 'acceptor_angle'),
     ),
     InteractionType(
         name="chalcogen_bond",
         family=FAMILY_CHALCOGEN_BOND,
         label="Chalcogen bond",
-        cutoffs=("distance", "angle"),
+        cutoffs=('s_o_min_distance', 's_o_distance', 'se_o_min_distance', 'se_o_distance', 'se_s_min_distance', 'se_s_distance', 'angle'),
     ),
     InteractionType(
         name="halogen_pi",
         family=FAMILY_HALOGEN_BOND,
         label="Halogen-pi",
-        cutoffs=("distance", "offset"),
+        cutoffs=('distance', 'donor_angle'),
     ),
     InteractionType(
         name="chalcogen_pi",
         family=FAMILY_CHALCOGEN_BOND,
         label="Chalcogen-pi",
-        cutoffs=("distance", "angle", "offset"),
+        cutoffs=('distance', 'angle', 'directional_distance', 'directional_angle'),
     ),
     InteractionType(
         name="tetrel_bond",
         family=FAMILY_TETREL_BOND,
         label="Tetrel bond",
-        cutoffs=("distance", "min_distance", "angle", "hydrogen_angle"),
+        cutoffs=('min_distance', 'distance', 'angle', 'acceptor_angle'),
     ),
     InteractionType(
         name="ch_pi",
         family=FAMILY_HYDROPHOBIC,
         label="C-H-pi",
-        cutoffs=("distance", "angle", "donor_angle", "offset"),
+        cutoffs=('hydrogen_distance', 'angle', 'donor_angle'),
+    ),
+    InteractionType(
+        name="hydrophobic_enclosure",
+        family=FAMILY_HYDROPHOBIC,
+        label="Hydrophobic enclosure",
+        # Derived from accepted hydrophobic contacts; inherits their distance cutoff.
     ),
     InteractionType(
         name="hydrophobic",
@@ -201,12 +200,17 @@ INTERACTION_TYPES: tuple[InteractionType, ...] = (
     ),
 )
 
+HISTORICAL_INTERACTION_TYPES = (
+    InteractionType("anion_pi", FAMILY_IONIC, "Anion-pi (historical)"),
+)
+
 INTERACTION_TYPES_BY_NAME: dict[str, InteractionType] = {
     interaction.name: interaction for interaction in INTERACTION_TYPES
 }
 
 INTERACTION_FAMILIES: dict[str, str] = {
-    interaction.name: interaction.family for interaction in INTERACTION_TYPES
+    interaction.name: interaction.family
+    for interaction in (*INTERACTION_TYPES, *HISTORICAL_INTERACTION_TYPES)
 }
 
 # Ordered, de-duplicated family list; ifm_config validates a weight exists for each.
@@ -226,8 +230,10 @@ CUTOFF_HELP = {
     "hydrogen_angle": "minimum H-donor-acceptor angle required to rule out a C-H contact.",
     "offset": "offset cutoff.",
     "min_offset": "minimum offset.",
-    "sulfur_distance": "distance cutoff when sulfur is the donor or acceptor.",
-    "short_distance": "distance below which the bond is flagged short/low-barrier.",
+    "hydrogen_distance": "hydrogen-to-acceptor/centroid maximum distance.",
+    "hydrogen_min_distance": "hydrogen-to-acceptor minimum distance.",
+    "acceptor_angle": "acceptor-side angle cutoff.",
+    "min_residue_separation": "minimum separation along the same polymer chain.",
 }
 
 

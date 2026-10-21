@@ -1,13 +1,12 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 from pathlib import Path
 from typing import Any
 import warnings
 
 from .assignment import assign_interactions
-from .ccd import fetch_missing_ligand_smiles_from_ccd
-from .chemistry import apply_ligand_smiles_templates, mark_untemplated_ligands_ignored
 from .features import perceive_features
 from .interactions import generate_candidates
 from .models import (
@@ -20,7 +19,8 @@ from .models import (
 )
 from .parser import parse_embedded_ligand_smiles, parse_structure
 from .profile import apply_rule_overrides, load_profile
-from .protonation import prepare_ligand_smiles
+from .geometry_catalogue import geometry_result_metadata
+from .preparation import prepare_ligand_chemistry
 from .sdf import SdfLigand, add_sdf_ligands, load_sdf_ligands
 
 
@@ -45,6 +45,7 @@ def analyze(
     include_raw: bool = False,
     threads: int | str = "auto",
     strict_ligand_templates: bool = False,
+    assembly_overrides: dict | str | Path | None = None,
 ) -> AnalysisResult:
     sdf_ligands = load_sdf_ligands(ligand_sdf, ligand_sdf_dir)
     return _analyze_loaded_sdf_ligands(
@@ -66,6 +67,7 @@ def analyze(
         include_raw=include_raw,
         threads=threads,
         strict_ligand_templates=strict_ligand_templates,
+        assembly_overrides=assembly_overrides,
     )
 
 
@@ -88,6 +90,7 @@ def analyze_batch(
     include_raw: bool = False,
     threads: int | str = "auto",
     strict_ligand_templates: bool = False,
+    assembly_overrides: dict | str | Path | None = None,
 ) -> dict[str, AnalysisResult]:
     sdf_ligands = load_sdf_ligands(ligand_sdf, ligand_sdf_dir)
     if not sdf_ligands:
@@ -116,6 +119,7 @@ def analyze_batch(
             threads=threads,
             batch_ligand_key=batch_key,
             strict_ligand_templates=strict_ligand_templates,
+            assembly_overrides=assembly_overrides,
         )
     return results
 
@@ -159,6 +163,7 @@ def _analyze_loaded_sdf_ligands(
     threads: int | str,
     batch_ligand_key: str | None = None,
     strict_ligand_templates: bool = False,
+    assembly_overrides: dict | str | Path | None = None,
 ) -> AnalysisResult:
     if scope != "all":
         raise ValueError("Standalone Chemur v1 currently supports scope='all' only")
@@ -168,77 +173,22 @@ def _analyze_loaded_sdf_ligands(
     sdf_mode = bool(sdf_ligands)
 
     atoms, components = parse_structure(structure, include_ligands=not sdf_mode)
-    ccd_missing: dict[str, str] = {}
-    fetched_ccd_smiles = False
-    used_embedded_smiles = False
-    auto_sourced_smiles = False
     sdf_input_smiles: dict[str, str] = {}
     sdf_smiles_overrides: list[str] = []
-
     if sdf_mode:
         sdf_input_smiles = add_sdf_ligands(atoms, components, sdf_ligands)
         input_smiles, sdf_smiles_overrides = _select_sdf_smiles(
-            components,
-            sdf_input_smiles,
-            input_smiles,
+            components, sdf_input_smiles, input_smiles,
         )
-    elif not input_smiles:
-        # Auto-source ligand SMILES. Precedence: (1) user input (handled above, so
-        # we only reach here when none was given), (2) SMILES embedded in the input
-        # mmCIF's chem_comp records, (3) a CCD network lookup for whatever is left.
-        ligand_names = {
-            component.name.upper()
-            for component in components
-            if component.molecule_type == "ligand"
-        }
-        embedded = parse_embedded_ligand_smiles(structure)
-        input_smiles = {name: embedded[name] for name in ligand_names if name in embedded}
-        used_embedded_smiles = bool(input_smiles)
-
-        remaining = [
-            component
-            for component in components
-            if component.molecule_type == "ligand"
-            and component.name.upper() not in input_smiles
-        ]
-        if remaining and fetch_ccd_smiles:
-            ccd_result = fetch_missing_ligand_smiles_from_ccd(
-                remaining,
-                timeout=ccd_timeout,
-            )
-            input_smiles.update(ccd_result.smiles)
-            ccd_missing = ccd_result.missing
-            fetched_ccd_smiles = True
-            for ligand_name, reason in ccd_missing.items():
-                warnings.warn(
-                    f"Could not find CCD SMILES for ligand {ligand_name}; "
-                    f"that ligand will be skipped. Reason: {reason}",
-                    RuntimeWarning,
-                    stacklevel=2,
-                )
-        auto_sourced_smiles = used_embedded_smiles or fetched_ccd_smiles
-
-    smiles = prepare_ligand_smiles(
-        input_smiles,
-        protonate=protonate,
-        ph_min=protonate_ph_min,
-        ph_max=protonate_ph_max,
-        precision=protonate_precision,
-        max_variants=protonate_max_variants,
-        debug=debug,
+    chemistry_metadata = prepare_ligand_chemistry(
+        atoms, components, ligand_smiles=input_smiles,
+        embedded_smiles=parse_embedded_ligand_smiles(structure) if not sdf_mode else {},
+        assembly_overrides=assembly_overrides, fetch_ccd=fetch_ccd_smiles,
+        ccd_timeout=ccd_timeout, protonate=protonate, ph_min=protonate_ph_min,
+        ph_max=protonate_ph_max, precision=protonate_precision,
+        max_variants=protonate_max_variants, debug=debug, strict=strict_ligand_templates,
+        sdf_mode=sdf_mode, sdf_overrides=sdf_smiles_overrides,
     )
-    if sdf_mode and (protonate or sdf_smiles_overrides):
-        apply_ligand_smiles_templates(atoms, components, smiles, strict=strict_ligand_templates)
-    elif auto_sourced_smiles:
-        mark_untemplated_ligands_ignored(
-            atoms,
-            components,
-            smiles,
-            reason="No embedded or CCD SMILES template was available",
-        )
-        apply_ligand_smiles_templates(atoms, components, smiles, strict=strict_ligand_templates)
-    elif not sdf_mode:
-        apply_ligand_smiles_templates(atoms, components, smiles, strict=strict_ligand_templates)
 
     features, candidates, interactions = assign_for_atoms(atoms, components, profile_data)
 
@@ -257,6 +207,7 @@ def _analyze_loaded_sdf_ligands(
         raw_candidates=candidates if include_raw else [],
         profile_name=str(profile_data.get("name", "default")),
         metadata={
+            **geometry_result_metadata(profile_data),
             "structure": str(structure),
             "scope": scope,
             "threads": threads,
@@ -265,13 +216,8 @@ def _analyze_loaded_sdf_ligands(
             "sdf_ligands": _sdf_component_metadata(components),
             "sdf_smiles_overrides": sdf_smiles_overrides,
             "batch_ligand_key": batch_ligand_key,
-            "ligand_smiles_keys": sorted(smiles),
-            "ligand_smiles": smiles,
             "sdf_input_ligand_smiles": sdf_input_smiles,
-            "input_ligand_smiles": input_smiles,
-            "ccd_smiles_lookup": fetched_ccd_smiles,
-            "embedded_smiles_lookup": used_embedded_smiles,
-            "ccd_missing": ccd_missing,
+            **chemistry_metadata,
             "protonate": protonate,
             "protonate_ph_min": protonate_ph_min,
             "protonate_ph_max": protonate_ph_max,
@@ -279,7 +225,7 @@ def _analyze_loaded_sdf_ligands(
             "protonate_max_variants": protonate_max_variants,
             "strict_ligand_templates": strict_ligand_templates,
             "skipped_ligands": skipped_ligands,
-            "rule_overrides": rule_overrides or {},
+            "rule_overrides": deepcopy(rule_overrides or {}),
         },
     )
 

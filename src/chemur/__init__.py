@@ -1,6 +1,7 @@
 from importlib.metadata import PackageNotFoundError, version as _version
 
 from .api import analyze, analyze_batch
+from .geometry_catalogue import GEOMETRY_REVISION, get_geometry_catalogue, geometry_parameters
 from .models import (
     AnalysisResult,
     AssignedInteraction,
@@ -19,6 +20,9 @@ except PackageNotFoundError:  # running from a source tree that was never instal
 
 __all__ = [
     "__version__",
+    "GEOMETRY_REVISION",
+    "get_geometry_catalogue",
+    "geometry_parameters",
     "analyze",
     "analyze_batch",
     "score_poses",

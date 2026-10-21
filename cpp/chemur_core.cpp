@@ -70,132 +70,144 @@ Vec3 centroid(const std::vector<Vec3>& points) {
     return center;
 }
 
-Vec3 three_point_normal(const std::vector<Vec3>& points) {
-    if (points.size() < 3) {
-        return Vec3{0.0, 0.0, 1.0};
-    }
-    const Vec3& p0 = points[0];
-    const Vec3& p1 = points[1];
-    const Vec3& p2 = points[2];
-    const Vec3 u{p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]};
-    const Vec3 v{p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]};
-    Vec3 n{
-        u[1] * v[2] - u[2] * v[1],
-        u[2] * v[0] - u[0] * v[2],
-        u[0] * v[1] - u[1] * v[0],
-    };
-    const double norm = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
-    if (norm == 0.0) {
-        return Vec3{0.0, 0.0, 1.0};
-    }
-    n[0] /= norm;
-    n[1] /= norm;
-    n[2] /= norm;
-    return n;
-}
+using Matrix3 = std::array<Vec3, 3>;
 
-// Smallest eigenvalue of the symmetric 3x3 matrix (xx, xy, xz, yy, yz, zz),
-// via the closed-form trigonometric solution of the characteristic cubic.
-double smallest_eigenvalue(double xx, double xy, double xz, double yy, double yz, double zz) {
-    const double off_diagonal = xy * xy + xz * xz + yz * yz;
-    if (off_diagonal == 0.0) {
-        return std::min(xx, std::min(yy, zz));
-    }
-
-    const double q = (xx + yy + zz) / 3.0;
-    const double p2 = (xx - q) * (xx - q) + (yy - q) * (yy - q) + (zz - q) * (zz - q) +
-                      2.0 * off_diagonal;
-    const double p = std::sqrt(p2 / 6.0);
-    if (p == 0.0) {
-        return q;
-    }
-
-    const double b00 = (xx - q) / p;
-    const double b11 = (yy - q) / p;
-    const double b22 = (zz - q) / p;
-    const double b01 = xy / p;
-    const double b02 = xz / p;
-    const double b12 = yz / p;
-    const double determinant = b00 * (b11 * b22 - b12 * b12) -
-                               b01 * (b01 * b22 - b12 * b02) +
-                               b02 * (b01 * b12 - b11 * b02);
-    const double r = std::max(-1.0, std::min(1.0, determinant / 2.0));
-    const double phi = std::acos(r) / 3.0;
-    return q + 2.0 * p * std::cos(phi + 2.0 * PI / 3.0);
-}
-
-// Best-fit plane through `points` as (unit normal, RMS deviation). The normal is
-// the eigenvector of the smallest covariance eigenvalue, so it does not depend on
-// which atoms come first -- unlike a three-point cross product. The RMS deviation
-// doubles as the planarity of the point set.
-std::tuple<Vec3, double> plane_fit(const std::vector<Vec3>& points) {
-    if (points.size() < 3) {
-        return std::make_tuple(Vec3{0.0, 0.0, 1.0}, 0.0);
-    }
-
-    const Vec3 center = centroid(points);
-    double xx = 0.0, xy = 0.0, xz = 0.0, yy = 0.0, yz = 0.0, zz = 0.0;
-    for (const auto& point : points) {
-        const double dx = point[0] - center[0];
-        const double dy = point[1] - center[1];
-        const double dz = point[2] - center[2];
-        xx += dx * dx;
-        xy += dx * dy;
-        xz += dx * dz;
-        yy += dy * dy;
-        yz += dy * dz;
-        zz += dz * dz;
-    }
-
-    const double smallest = smallest_eigenvalue(xx, xy, xz, yy, yz, zz);
-    const std::array<Vec3, 3> rows{
-        Vec3{xx - smallest, xy, xz},
-        Vec3{xy, yy - smallest, yz},
-        Vec3{xz, yz, zz - smallest},
-    };
-
-    Vec3 best{0.0, 0.0, 0.0};
-    double best_norm = 0.0;
-    for (std::size_t i = 0; i < 3; ++i) {
-        for (std::size_t j = i + 1; j < 3; ++j) {
-            const Vec3& a = rows[i];
-            const Vec3& b = rows[j];
-            const Vec3 candidate{
-                a[1] * b[2] - a[2] * b[1],
-                a[2] * b[0] - a[0] * b[2],
-                a[0] * b[1] - a[1] * b[0],
-            };
-            const double norm = std::sqrt(candidate[0] * candidate[0] +
-                                          candidate[1] * candidate[1] +
-                                          candidate[2] * candidate[2]);
-            if (norm > best_norm) {
-                best_norm = norm;
-                best = candidate;
+// Jacobi eigenvalues and column eigenvectors of a scaled symmetric 3x3 matrix.
+// Keep the algorithm and tolerances in sync with _fallback_core.py.
+std::tuple<Vec3, Matrix3> symmetric_eigensystem(Matrix3 matrix) {
+    Matrix3 vectors{Vec3{1.0, 0.0, 0.0}, Vec3{0.0, 1.0, 0.0}, Vec3{0.0, 0.0, 1.0}};
+    constexpr std::array<std::array<int, 2>, 3> pairs{{{0, 1}, {0, 2}, {1, 2}}};
+    for (int sweep = 0; sweep < 32; ++sweep) {
+        if (std::max({std::fabs(matrix[0][1]), std::fabs(matrix[0][2]),
+                      std::fabs(matrix[1][2])}) <= 1e-14) {
+            break;
+        }
+        for (const auto& pair : pairs) {
+            const int p = pair[0];
+            const int q = pair[1];
+            const double off_diagonal = matrix[p][q];
+            if (std::fabs(off_diagonal) <= 1e-14) {
+                continue;
+            }
+            const double tau = (matrix[q][q] - matrix[p][p]) / (2.0 * off_diagonal);
+            const double tangent = (tau >= 0.0 ? 1.0 : -1.0) /
+                                   (std::fabs(tau) + std::sqrt(1.0 + tau * tau));
+            const double cosine = 1.0 / std::sqrt(1.0 + tangent * tangent);
+            const double sine = tangent * cosine;
+            matrix[p][p] -= tangent * off_diagonal;
+            matrix[q][q] += tangent * off_diagonal;
+            matrix[p][q] = matrix[q][p] = 0.0;
+            for (int i = 0; i < 3; ++i) {
+                if (i != p && i != q) {
+                    const double ip = matrix[i][p];
+                    const double iq = matrix[i][q];
+                    matrix[i][p] = matrix[p][i] = cosine * ip - sine * iq;
+                    matrix[i][q] = matrix[q][i] = sine * ip + cosine * iq;
+                }
+                const double ip = vectors[i][p];
+                const double iq = vectors[i][q];
+                vectors[i][p] = cosine * ip - sine * iq;
+                vectors[i][q] = sine * ip + cosine * iq;
             }
         }
     }
+    return std::make_tuple(Vec3{matrix[0][0], matrix[1][1], matrix[2][2]}, vectors);
+}
 
-    if (best_norm < 1e-12) {
-        // Collinear or coincident points: the plane is undefined.
-        return std::make_tuple(three_point_normal(points), 0.0);
+Vec3 minimum_eigenspace_normal(const Vec3& values, const Matrix3& vectors) {
+    const double smallest = std::min({values[0], values[1], values[2]});
+    const double tolerance = 1e-12 *
+        std::max({1.0, std::fabs(values[0]), std::fabs(values[1]), std::fabs(values[2])});
+    Vec3 best{0.0, 0.0, 0.0};
+    double best_norm2 = -1.0;
+    // Project coordinate axes into the minimum eigenspace, selecting the
+    // largest projection. Ties prefer Z, then Y, then X.
+    for (int axis : {2, 1, 0}) {
+        Vec3 projected{0.0, 0.0, 0.0};
+        for (int i = 0; i < 3; ++i) {
+            for (int j = 0; j < 3; ++j) {
+                if (values[j] - smallest <= tolerance) {
+                    projected[i] += vectors[i][j] * vectors[axis][j];
+                }
+            }
+        }
+        const double norm2 = projected[0] * projected[0] + projected[1] * projected[1] +
+                             projected[2] * projected[2];
+        if (norm2 > best_norm2 + 1e-12) {
+            best = projected;
+            best_norm2 = norm2;
+        }
     }
-
-    Vec3 unit{best[0] / best_norm, best[1] / best_norm, best[2] / best_norm};
-    // The eigenvector sign is arbitrary; pin it so the stored normal is
-    // reproducible across atom orderings.
-    for (std::size_t i = 0; i < 3; ++i) {
-        if (std::fabs(unit[i]) > 1e-9) {
-            if (unit[i] < 0.0) {
-                unit[0] = -unit[0];
-                unit[1] = -unit[1];
-                unit[2] = -unit[2];
+    const double norm = std::sqrt(best_norm2);
+    Vec3 normal{best[0] / norm, best[1] / norm, best[2] / norm};
+    for (double value : normal) {
+        if (std::fabs(value) > 1e-12) {
+            if (value < 0.0) {
+                for (double& component : normal) {
+                    component = -component;
+                }
             }
             break;
         }
     }
+    return normal;
+}
 
-    const double rmsd = std::sqrt(std::max(0.0, smallest) / static_cast<double>(points.size()));
-    return std::make_tuple(unit, rmsd);
+// Best-fit plane as (unit normal, RMS deviation). Repeated minimum eigenvalues
+// define several equally good planes, not necessarily a planar point set.
+std::tuple<Vec3, double> plane_fit(const std::vector<Vec3>& points) {
+    if (points.size() < 3) {
+        return std::make_tuple(Vec3{0.0, 0.0, 1.0}, 0.0);
+    }
+    // Averaging repeated decimal coordinates can otherwise introduce a
+    // rounding residual despite the point set having exactly zero extent.
+    if (std::all_of(points.begin() + 1, points.end(),
+                    [&points](const Vec3& point) { return point == points.front(); })) {
+        return std::make_tuple(Vec3{0.0, 0.0, 1.0}, 0.0);
+    }
+
+    const Vec3 center = centroid(points);
+    std::vector<Vec3> scaled;
+    scaled.reserve(points.size());
+    double coordinate_scale = 0.0;
+    for (const auto& point : points) {
+        const Vec3 delta{point[0] - center[0], point[1] - center[1], point[2] - center[2]};
+        scaled.push_back(delta);
+        for (double value : delta) {
+            coordinate_scale = std::max(coordinate_scale, std::fabs(value));
+        }
+    }
+    if (coordinate_scale == 0.0) {
+        return std::make_tuple(Vec3{0.0, 0.0, 1.0}, 0.0);
+    }
+    Matrix3 covariance{};
+    for (auto& point : scaled) {
+        for (double& value : point) {
+            value /= coordinate_scale;
+        }
+        for (int i = 0; i < 3; ++i) {
+            for (int j = i; j < 3; ++j) {
+                covariance[i][j] += point[i] * point[j];
+            }
+        }
+    }
+    const double matrix_scale = std::max({covariance[0][0], covariance[1][1], covariance[2][2]});
+    for (int i = 0; i < 3; ++i) {
+        for (int j = i; j < 3; ++j) {
+            covariance[i][j] /= matrix_scale;
+            covariance[j][i] = covariance[i][j];
+        }
+    }
+    const auto eigensystem = symmetric_eigensystem(covariance);
+    const Vec3 normal = minimum_eigenspace_normal(std::get<0>(eigensystem), std::get<1>(eigensystem));
+    double squared_deviation = 0.0;
+    for (const auto& point : scaled) {
+        const double projection = point[0] * normal[0] + point[1] * normal[1] + point[2] * normal[2];
+        squared_deviation += projection * projection;
+    }
+    const double rmsd = coordinate_scale *
+                       std::sqrt(squared_deviation / static_cast<double>(points.size()));
+    return std::make_tuple(normal, rmsd);
 }
 
 Vec3 plane_normal(const std::vector<Vec3>& points) {
@@ -268,6 +280,80 @@ std::vector<std::tuple<int, int, double>> neighbor_pairs(const std::vector<Vec3>
         }
     }
     return pairs;
+}
+
+// Strict 3D enclosure is equivalent to the absence of a closed hemisphere
+// containing all contact directions. A separating hemisphere has a boundary
+// through two independent directions, whose cross product gives its normal.
+// Keep this algorithm and its tolerances in sync with _fallback_core.py.
+bool is_enclosed(const Vec3& center, const std::vector<Vec3>& neighbor_coords) {
+    for (double value : center) {
+        if (!std::isfinite(value)) {
+            return false;
+        }
+    }
+    std::vector<Vec3> directions;
+    directions.reserve(neighbor_coords.size());
+    for (const auto& point : neighbor_coords) {
+        Vec3 delta{point[0] - center[0], point[1] - center[1], point[2] - center[2]};
+        double scale = 0.0;
+        for (double value : delta) {
+            if (!std::isfinite(value)) {
+                return false;
+            }
+            scale = std::max(scale, std::fabs(value));
+        }
+        if (scale == 0.0) {
+            continue;
+        }
+        for (double& value : delta) {
+            value /= scale;
+        }
+        const double norm = std::sqrt(delta[0] * delta[0] + delta[1] * delta[1] +
+                                      delta[2] * delta[2]);
+        for (double& value : delta) {
+            value /= norm;
+        }
+        directions.push_back(delta);
+    }
+    if (directions.size() < 4) {
+        return false;
+    }
+
+    bool tested_pair = false;
+    for (std::size_t i = 0; i < directions.size(); ++i) {
+        for (std::size_t j = i + 1; j < directions.size(); ++j) {
+            const Vec3& first = directions[i];
+            const Vec3& second = directions[j];
+            const Vec3 normal{
+                first[1] * second[2] - first[2] * second[1],
+                first[2] * second[0] - first[0] * second[2],
+                first[0] * second[1] - first[1] * second[0],
+            };
+            const double norm = std::sqrt(normal[0] * normal[0] + normal[1] * normal[1] +
+                                          normal[2] * normal[2]);
+            if (norm <= 1e-12) {
+                continue;
+            }
+            tested_pair = true;
+            const double tolerance = 1e-9 * norm;
+            bool positive = false;
+            bool negative = false;
+            for (const auto& direction : directions) {
+                const double projection = direction[0] * normal[0] +
+                                          direction[1] * normal[1] + direction[2] * normal[2];
+                positive = positive || projection > tolerance;
+                negative = negative || projection < -tolerance;
+                if (positive && negative) {
+                    break;
+                }
+            }
+            if (!(positive && negative)) {
+                return false;
+            }
+        }
+    }
+    return tested_pair;
 }
 
 bool is_occluded(
@@ -353,6 +439,7 @@ PYBIND11_MODULE(_chemur_core, m) {
     );
     m.def("point_plane_offset", &point_plane_offset, py::arg("point"), py::arg("center"), py::arg("normal"));
     m.def("neighbor_pairs", &neighbor_pairs, py::arg("coords"), py::arg("cutoff"));
+    m.def("is_enclosed", &is_enclosed, py::arg("center"), py::arg("neighbor_coords"));
     m.def(
         "is_occluded",
         &is_occluded_py,

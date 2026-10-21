@@ -4,11 +4,12 @@ import pytest
 from chemur.trajectory import ArrayFrameSource, analyze_trajectory
 
 
-# A backbone donor (N + its H) and an acceptor (O) on two residues, plus a water.
+# A backbone donor and a carbonyl acceptor with its real antecedent, plus water.
 MINI_PDB = """\
 ATOM      1  N   ALA A   1       0.000   0.000   0.000  1.00  0.00           N
 ATOM      2  H   ALA A   1       0.900   0.000   0.000  1.00  0.00           H
 ATOM      3  O   ALA A   2       2.800   0.000   0.000  1.00  0.00           O
+ATOM      5  C   ALA A   2       4.000   0.000   0.000  1.00  0.00           C
 HETATM    4  O   HOH A   3      10.000  10.000  10.000  1.00  0.00           O
 END
 """
@@ -76,16 +77,14 @@ def test_exclude_solvent_drops_water_atoms(mini_structure):
 
 
 def test_exclude_solvent_preserves_donor_hydrogen_bonds(mini_structure):
-    """Regression: excluding solvent renumbers atoms; the donor heavy atom must
-    keep its H neighbour so the N-H...O hbond is still detected (was dropped when
-    the bond remap was single-pass)."""
+    """Filtering must preserve the donor's bond to its hydrogen."""
     pdb, coords = mini_structure
     result = analyze_trajectory(
         ArrayFrameSource(pdb, coords), exclude_solvent=True, processes=1
     )
-    # The hbond present in frame 0 must survive the exclusion renumbering.
+    # The hbond present in frame 0 must survive filtering.
     assert any(k[0] == "hbond" for k in result.occupancy())
-    # The donor heavy atom (ALA:1 N) still has a bonded hydrogen after renumber.
+    # The donor heavy atom (ALA:1 N) still has a bonded hydrogen.
     by_id = {a.atom_id: a for a in result.atoms}
     donor = next(a for a in result.atoms if a.element == "N")
     assert any(by_id[b].element == "H" for b in donor.bonds)

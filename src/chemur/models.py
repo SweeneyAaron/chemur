@@ -32,12 +32,16 @@ class AtomRecord:
     hydrogen_count: int = 0
     is_aromatic: bool = False
     is_hydrophobe: bool = False
-    # Whether a chalcogen's sigma-hole is actually positive. Geometry cannot tell:
-    # at the C-S extension of an ordinary Met or Cys the potential is negative, so
-    # nothing is there to donate into. Set during atom typing, gated on in detection.
+    # Legacy electronic-activation annotation retained for record compatibility.
+    # Chalcogen detection uses validated donor chemistry and element-specific
+    # geometry; methionine-like sulfur no longer requires this activation flag.
     sigma_hole_activated: bool = False
     bonds: tuple[int, ...] = ()
     metadata: dict[str, Any] = field(default_factory=dict)
+    # Electronic activation for C-H hydrogen bonding is independent of the
+    # carbon_donor capacity shared with CH-pi contacts. Appended for positional
+    # compatibility with existing AtomRecord callers.
+    weak_hbond_activated: bool = False
 
     @property
     def label(self) -> str:
@@ -194,26 +198,32 @@ class AnalysisResult:
             "resource_demands",
             "resource_labels",
             "rejection_reason",
+            "metadata",
         ]
         with Path(path).open("w", encoding="utf-8", newline="") as handle:
             writer = csv.DictWriter(handle, fieldnames=fieldnames)
             writer.writeheader()
-            writer.writerows(rows)
+            writer.writerows(
+                {**row, "metadata": json.dumps(row["metadata"], sort_keys=True)}
+                for row in rows
+            )
 
     def split_by_ligand(self, include_raw: bool = False) -> dict[str, "AnalysisResult"]:
-        ligand_components = [
-            component
-            for component in self.components
-            if component.molecule_type == "ligand"
-            and not component.metadata.get("ignored_by_template")
-        ]
+        from .ligand_selection import ligand_selections
+
         return {
-            component.component_id: self._filtered_for_ligand(
-                component,
+            selection.ligand_id: self._filtered_for_selection(
+                selection,
                 include_raw=include_raw,
             )
-            for component in ligand_components
+            for selection in ligand_selections(self)
         }
+
+    def select_ligand(self, ligand_id: str, include_raw: bool = False) -> "AnalysisResult":
+        """Select an entire chemical ligand by assembly ID or member residue ID."""
+        from .ligand_selection import resolve_ligand
+
+        return self._filtered_for_selection(resolve_ligand(self, ligand_id), include_raw=include_raw)
 
     def write_ligand_outputs(
         self,
@@ -253,21 +263,26 @@ class AnalysisResult:
         *,
         include_raw: bool,
     ) -> "AnalysisResult":
-        ligand_id = ligand.component_id
+        return self.select_ligand(ligand.component_id, include_raw=include_raw)
+
+    def _filtered_for_selection(self, selection, *, include_raw: bool) -> "AnalysisResult":
+        ligand = next(component for component in self.components
+                      if component.component_id == selection.owner_component_id)
         interactions = [
             interaction
             for interaction in self.interactions
-            if ligand_id in interaction.component_ids
+            if selection.touches(interaction)
         ]
         raw_candidates = [
             candidate
             for candidate in self.raw_candidates
-            if ligand_id in candidate.component_ids
+            if selection.touches(candidate)
         ] if include_raw else []
 
-        component_ids = {ligand_id}
-        atom_ids = set(ligand.atom_ids)
-        feature_ids: set[int] = set()
+        component_ids = set(selection.component_ids)
+        atom_ids = set(selection.atom_ids)
+        feature_ids = {feature.feature_id for feature in self.features
+                       if selection.owns_feature(feature)}
         for interaction in [*interactions, *raw_candidates]:
             component_ids.update(interaction.component_ids)
             atom_ids.update(interaction.atom_ids)
@@ -288,6 +303,12 @@ class AnalysisResult:
         metadata["ligand_name"] = ligand.name
         metadata["ligand_chain_id"] = ligand.chain_id
         metadata["ligand_residue_id"] = ligand.residue_id
+        if len(selection.component_ids) > 1:
+            metadata["ligand_assembly_id"] = selection.ligand_id
+            metadata["ligand_component_ids"] = list(selection.component_ids)
+        else:
+            metadata.pop("ligand_assembly_id", None)
+            metadata.pop("ligand_component_ids", None)
 
         return AnalysisResult(
             atoms=atoms,
@@ -336,6 +357,7 @@ def _interaction_row(
             for demand in interaction.resource_demands
         ),
         "rejection_reason": getattr(interaction, "rejection_reason", None),
+        "metadata": dict(interaction.metadata),
     }
 
 

@@ -40,6 +40,7 @@ from .ifm_matcher import (
     score_protein_ifm_batch,
 )
 from .models import AnalysisResult
+from .ligand_selection import resolve_ligand
 
 DEFAULT_POSE_PROFILE_NAME = "cosplif_pose_v1"
 
@@ -87,7 +88,11 @@ def build_scoring_batch(results: dict[str, AnalysisResult]) -> dict[str, Any]:
             entry_key = key if len(payloads) == 1 else f"{key}:{index}"
             payload["cosplif"] = build_cosplif_payload(result, component_id)
             payload["ligand_id"] = entry_key
-            payload["source_component_id"] = component_id
+            selection = resolve_ligand(result, component_id)
+            payload["source_component_id"] = selection.owner_component_id
+            if len(selection.component_ids) > 1:
+                payload["source_assembly_id"] = selection.ligand_id
+                payload["source_component_ids"] = list(selection.component_ids)
             out[entry_key] = payload
     return {"results": out}
 
@@ -165,6 +170,8 @@ def score_poses(
     ifm_engine: str = "python",
     ifm_workers: int | str = "auto",
     include_reference: bool = False,
+    assembly_overrides: dict | str | Path | None = None,
+    strict_ligand_templates: bool = False,
 ) -> list[dict[str, Any]]:
     """Analyze docked poses against a receptor and rank them against a reference.
 
@@ -190,6 +197,8 @@ def score_poses(
         protonate_ph_max=protonate_ph_max,
         scope=scope,
         threads=threads,
+        assembly_overrides=assembly_overrides,
+        strict_ligand_templates=strict_ligand_templates,
     )
 
     results = analyze_batch(

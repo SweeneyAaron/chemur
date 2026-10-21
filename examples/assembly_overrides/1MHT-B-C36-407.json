@@ -1,0 +1,260 @@
+{
+  "version": 1,
+  "source_entry_id": "1MHT",
+  "products": [
+    {
+      "components": [
+        "B:C36:407"
+      ],
+      "product_smiles": "[C@H:1]1([n:11]2[c:2](=[O:15])[n:12][c:5]([NH2:13])[c:7]([F:10])[cH:9]2)[CH2:3][C@H:4]([O:17][P:42]([O:39][CH2:38][*:44])(=[O:40])[OH:41])[C@@H:6]([CH2:8][O:19][P:20](=[O:14])([O-:16])[O:35][C@H:24]2[CH2:23][C@H:21]([n:34]3[c:25]4[c:27]([c:28](=[O:37])[nH:30][c:22]([NH2:31])[n:32]4)[n:33][cH:29]3)[O:36][C@H:26]2[*:43])[O:18]1",
+      "atom_map": {
+        "1": {
+          "component": "B:C36:407",
+          "atom": "C1'",
+          "model": 1
+        },
+        "2": {
+          "component": "B:C36:407",
+          "atom": "C2",
+          "model": 1
+        },
+        "3": {
+          "component": "B:C36:407",
+          "atom": "C2'",
+          "model": 1
+        },
+        "4": {
+          "component": "B:C36:407",
+          "atom": "C3'",
+          "model": 1
+        },
+        "5": {
+          "component": "B:C36:407",
+          "atom": "C4",
+          "model": 1
+        },
+        "6": {
+          "component": "B:C36:407",
+          "atom": "C4'",
+          "model": 1
+        },
+        "7": {
+          "component": "B:C36:407",
+          "atom": "C5",
+          "model": 1
+        },
+        "8": {
+          "component": "B:C36:407",
+          "atom": "C5'",
+          "model": 1
+        },
+        "9": {
+          "component": "B:C36:407",
+          "atom": "C6",
+          "model": 1
+        },
+        "10": {
+          "component": "B:C36:407",
+          "atom": "F",
+          "model": 1
+        },
+        "11": {
+          "component": "B:C36:407",
+          "atom": "N1",
+          "model": 1
+        },
+        "12": {
+          "component": "B:C36:407",
+          "atom": "N3",
+          "model": 1
+        },
+        "13": {
+          "component": "B:C36:407",
+          "atom": "N4",
+          "model": 1
+        },
+        "14": {
+          "component": "B:C36:407",
+          "atom": "O1P",
+          "model": 1
+        },
+        "15": {
+          "component": "B:C36:407",
+          "atom": "O2",
+          "model": 1
+        },
+        "16": {
+          "component": "B:C36:407",
+          "atom": "O2P",
+          "model": 1
+        },
+        "17": {
+          "component": "B:C36:407",
+          "atom": "O3'",
+          "model": 1
+        },
+        "18": {
+          "component": "B:C36:407",
+          "atom": "O4'",
+          "model": 1
+        },
+        "19": {
+          "component": "B:C36:407",
+          "atom": "O5'",
+          "model": 1
+        },
+        "20": {
+          "component": "B:C36:407",
+          "atom": "P",
+          "model": 1
+        },
+        "21": {
+          "component": "B:DG:406",
+          "atom": "C1'",
+          "model": 1
+        },
+        "22": {
+          "component": "B:DG:406",
+          "atom": "C2",
+          "model": 1
+        },
+        "23": {
+          "component": "B:DG:406",
+          "atom": "C2'",
+          "model": 1
+        },
+        "24": {
+          "component": "B:DG:406",
+          "atom": "C3'",
+          "model": 1
+        },
+        "25": {
+          "component": "B:DG:406",
+          "atom": "C4",
+          "model": 1
+        },
+        "26": {
+          "component": "B:DG:406",
+          "atom": "C4'",
+          "model": 1
+        },
+        "27": {
+          "component": "B:DG:406",
+          "atom": "C5",
+          "model": 1
+        },
+        "28": {
+          "component": "B:DG:406",
+          "atom": "C6",
+          "model": 1
+        },
+        "29": {
+          "component": "B:DG:406",
+          "atom": "C8",
+          "model": 1
+        },
+        "30": {
+          "component": "B:DG:406",
+          "atom": "N1",
+          "model": 1
+        },
+        "31": {
+          "component": "B:DG:406",
+          "atom": "N2",
+          "model": 1
+        },
+        "32": {
+          "component": "B:DG:406",
+          "atom": "N3",
+          "model": 1
+        },
+        "33": {
+          "component": "B:DG:406",
+          "atom": "N7",
+          "model": 1
+        },
+        "34": {
+          "component": "B:DG:406",
+          "atom": "N9",
+          "model": 1
+        },
+        "35": {
+          "component": "B:DG:406",
+          "atom": "O3'",
+          "model": 1
+        },
+        "36": {
+          "component": "B:DG:406",
+          "atom": "O4'",
+          "model": 1
+        },
+        "37": {
+          "component": "B:DG:406",
+          "atom": "O6",
+          "model": 1
+        },
+        "38": {
+          "component": "B:DG:408",
+          "atom": "C5'",
+          "model": 1
+        },
+        "39": {
+          "component": "B:DG:408",
+          "atom": "O5'",
+          "model": 1
+        },
+        "40": {
+          "component": "B:DG:408",
+          "atom": "OP1",
+          "model": 1
+        },
+        "41": {
+          "component": "B:DG:408",
+          "atom": "OP2",
+          "model": 1
+        },
+        "42": {
+          "component": "B:DG:408",
+          "atom": "P",
+          "model": 1
+        }
+      },
+      "boundary_map": {
+        "43": {
+          "component": "B:DG:406",
+          "atom": "C5'",
+          "model": 1
+        },
+        "44": {
+          "component": "B:DG:408",
+          "atom": "C4'",
+          "model": 1
+        }
+      },
+      "update_polymer_atoms": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20
+      ],
+      "source_entry_id": "1MHT",
+      "description": "Unreacted 5-fluorodeoxycytidine at B407; no C5 methyl group. Phosphodiester O2P carries the DNA baseline negative charge; the amino/oxo base remains neutral."
+    }
+  ]
+}

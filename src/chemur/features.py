@@ -64,12 +64,39 @@ METAL_ELEMENTS = {"Al", "Ba", "Ca", "Cd", "Co", "Cu", "Fe", "K", "Li", "Mg", "Mn
 PLANAR_FEATURE_TYPES = {"ring", "amide", "carbonyl"}
 
 
+def _unique_mean_plane(coords):
+    """Return a fitted plane only when a finite, unique least-variance axis exists."""
+    import numpy as np
+    points = np.asarray(coords, dtype=float)
+    if len(points) < 3 or not np.isfinite(points).all():
+        return None, None
+    points = points - points.mean(axis=0)
+    scale = float(np.max(np.abs(points)))
+    if not np.isfinite(scale) or scale == 0.0:
+        return None, None
+    covariance = (points / scale).T @ (points / scale)
+    values = np.linalg.eigvalsh(covariance)
+    tolerance = max(float(values[-1]), 1.0) * 1e-12
+    if values[1] <= tolerance or values[1] - values[0] <= tolerance:
+        return None, None
+    return plane_fit(coords)
+
+
 def perceive_features(
     atoms: list[AtomRecord],
     components: list[ComponentRecord],
 ) -> list[FeatureRecord]:
     features: list[FeatureRecord] = []
     atoms_by_id = {atom.atom_id: atom for atom in atoms}
+    assembly_by_component = {
+        component.component_id: component.metadata.get("ligand_assembly_id")
+        for component in components
+    }
+    updated_polymer_ids = {
+        atom_id
+        for component in components
+        for atom_id in component.metadata.get("chemical_product", component.metadata.get("ligand_assembly", {})).get("updated_polymer_atom_ids", ())
+    }
     next_id = 0
 
     def add_feature(
@@ -81,14 +108,51 @@ def perceive_features(
     ) -> None:
         nonlocal next_id
         feature_atoms = [atoms_by_id[atom_id] for atom_id in atom_ids]
+        if any(
+            atom.metadata.get("ignored_by_template")
+            or atom.metadata.get("assembly_chemistry_unresolved")
+            for atom in feature_atoms
+        ):
+            return
         center = centroid([atom.coord for atom in feature_atoms])
         metadata = dict(metadata or {})
+        if feature_type == "amide" and all(key in metadata for key in ("carbon_atom_id", "nitrogen_atom_id")):
+            center = centroid([atoms_by_id[metadata[key]].coord for key in ("carbon_atom_id", "nitrogen_atom_id")])
+        if metadata.get("source", "").startswith(("protein_", "nucleotide_")) and (
+            updated_polymer_ids.intersection(atom_ids)
+        ):
+            # The connected product is authoritative for modified polymer
+            # groups; a residue-name template would retain pre-reaction typing.
+            return
+        metadata["component_ids"] = sorted({atom.component_id for atom in feature_atoms})
+        if component_id not in metadata["component_ids"]:
+            component_id = metadata["component_ids"][0]
+        ligand_atoms = [atom for atom in feature_atoms if atom.molecule_type == "ligand"]
+        polymer_atoms = [
+            atom for atom in feature_atoms if atom.molecule_type in {"protein", "nucleotide"}
+        ]
+        if ligand_atoms and polymer_atoms:
+            # A carbonyl plane or amide can span a covalent attachment. Its
+            # polymer atoms remain part of the target, rather than becoming a
+            # ligand-owned feature merely because its template began there.
+            metadata["crosses_attachment_boundary"] = True
+            metadata.pop("ligand_assembly_id", None)
+            component_id = min(atom.component_id for atom in polymer_atoms)
+        elif ligand_atoms and len(ligand_atoms) == len(feature_atoms):
+            assembly_ids = {
+                atom.metadata.get("ligand_assembly_id")
+                or assembly_by_component.get(atom.component_id)
+                for atom in ligand_atoms
+            }
+            if len(assembly_ids) == 1 and None not in assembly_ids:
+                metadata["ligand_assembly_id"] = next(iter(assembly_ids))
         normal = None
         if feature_type in PLANAR_FEATURE_TYPES and len(feature_atoms) >= 3:
-            normal, planarity = plane_fit([atom.coord for atom in feature_atoms])
+            normal, planarity = _unique_mean_plane([atom.coord for atom in feature_atoms])
             # The scorers read metadata["planarity"]; before the mean-plane fit
             # there was nothing to write it from.
             metadata["planarity"] = planarity
+            metadata["plane_valid"] = normal is not None
         features.append(
             FeatureRecord(
                 feature_id=next_id,
@@ -121,7 +185,7 @@ def perceive_features(
         )
 
     for atom in atoms:
-        if atom.metadata.get("ignored_by_template"):
+        if atom.metadata.get("ignored_by_template") or atom.metadata.get("assembly_chemistry_unresolved"):
             continue
         if atom.element == "H":
             continue
@@ -143,12 +207,16 @@ def perceive_features(
                 (atom.atom_id,),
                 atom.chalcogen_donor_capacity,
             )
+        if atom.metadata.get("sulfur_pi_types"):
+            add_feature("sulfur_pi", atom.component_id, (atom.atom_id,),
+                        metadata={"sulfur_pi_types": list(atom.metadata["sulfur_pi_types"])})
         if atom.tetrel_donor_capacity > 0:
             add_feature(
                 "tetrel_donor",
                 atom.component_id,
                 (atom.atom_id,),
                 atom.tetrel_donor_capacity,
+                metadata={"tetrel_root_atom_ids": list(atom.metadata.get("tetrel_root_atom_ids", ()))},
             )
         if atom.carbon_donor_capacity > 0:
             add_feature(
@@ -166,6 +234,7 @@ def perceive_features(
         if atom.molecule_type == "ion" and atom.element in METAL_ELEMENTS:
             add_feature("metal", atom.component_id, (atom.atom_id,))
 
+    emitted_products = set()
     for component in components:
         component_atoms = [atoms_by_id[atom_id] for atom_id in component.atom_ids]
         atom_ids_by_name = {atom.name.strip(): atom.atom_id for atom in component_atoms}
@@ -210,9 +279,27 @@ def perceive_features(
                 source="nucleotide_sugar_template",
             )
 
-        elif component.molecule_type == "ligand":
-            for ring in component.metadata.get("template_rings", []):
+        if component.molecule_type == "ligand" or component.metadata.get("chemical_product"):
+            # Only the assembly owner carries the grouped template metadata;
+            # other source residues retain their atom and component identities.
+            template = component.metadata.get("chemical_product", component.metadata.get("ligand_assembly", component.metadata))
+            product_id = template.get("assembly_id")
+            if product_id in emitted_products:
+                continue
+            if product_id is not None:
+                emitted_products.add(product_id)
+
+            def contributes_product_chemistry(atom_ids) -> bool:
+                return any(
+                    atom_id in updated_polymer_ids
+                    or atoms_by_id[atom_id].molecule_type == "ligand"
+                    for atom_id in atom_ids if atom_id in atoms_by_id
+                )
+
+            for ring in template.get("template_rings", []):
                 ring_ids = tuple(int(atom_id) for atom_id in ring)
+                if not contributes_product_chemistry(ring_ids):
+                    continue
                 add_ring(
                     component.component_id,
                     ring_ids,
@@ -226,7 +313,16 @@ def perceive_features(
                     source="smiles",
                     minimum=3,
                 )
-            for carbon_id, oxygen_id in component.metadata.get("template_carbonyls", []):
+            for carbon_id, oxygen_id in template.get("template_carbonyls", []):
+                carbon = atoms_by_id.get(int(carbon_id))
+                if carbon is None:
+                    continue
+                carbonyl_ids = (int(carbon_id), int(oxygen_id)) + tuple(
+                    neighbor for neighbor in carbon.bonds
+                    if neighbor in atoms_by_id and atoms_by_id[neighbor].element != "H"
+                )
+                if not contributes_product_chemistry(carbonyl_ids):
+                    continue
                 _add_carbonyl(
                     component.component_id,
                     int(carbon_id),
@@ -235,9 +331,11 @@ def perceive_features(
                     add_feature,
                     source="smiles",
                 )
-            for carbon_id, oxygen_id, nitrogen_id in component.metadata.get(
+            for carbon_id, oxygen_id, nitrogen_id in template.get(
                 "template_amides", []
             ):
+                if not contributes_product_chemistry((int(carbon_id), int(oxygen_id), int(nitrogen_id))):
+                    continue
                 _add_amide(
                     component.component_id,
                     int(carbon_id),

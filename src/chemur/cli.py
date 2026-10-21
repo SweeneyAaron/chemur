@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+from dataclasses import replace
 import json
 from pathlib import Path
 import re
@@ -11,6 +12,8 @@ from . import __version__
 from .api import analyze, analyze_batch
 from .core import USING_CPP_CORE
 from .interaction_types import CUTOFF_HELP, INTERACTION_TYPES
+from .geometry_catalogue import geometry_parameters
+from .models import AnalysisResult, _slugify_component_id
 
 
 def _rule_cutoff_flags() -> list[tuple[str, str, tuple[str, ...], str]]:
@@ -21,11 +24,17 @@ def _rule_cutoff_flags() -> list[tuple[str, str, tuple[str, ...], str]]:
     ...) accepted so existing command lines do not break.
     """
     flags: list[tuple[str, str, tuple[str, ...], str]] = []
+    descriptions = {(p["rule"], p["key"]): p for p in geometry_parameters()}
     for interaction in INTERACTION_TYPES:
         for cutoff in interaction.cutoffs:
             primary = f"--{interaction.name.replace('_', '-')}-{cutoff.replace('_', '-')}"
             spellings = (primary,) + tuple(interaction.aliases.get(cutoff, ()))
-            help_text = f"{interaction.label} {CUTOFF_HELP.get(cutoff, cutoff + ' cutoff.')}"
+            parameter = descriptions.get((interaction.name, cutoff))
+            help_text = (
+                f"{interaction.label}: {parameter['label']} ({parameter['units']})."
+                if parameter else
+                f"{interaction.label} {CUTOFF_HELP.get(cutoff, cutoff + ' cutoff.')}"
+            )
             flags.append((interaction.name, cutoff, spellings, help_text))
     return flags
 
@@ -35,6 +44,13 @@ RULE_CUTOFF_FLAGS = _rule_cutoff_flags()
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="chemur")
+    arguments = sys.argv[1:] if argv is None else argv
+    if any(arg.startswith("--anion-pi") for arg in arguments):
+        parser.error("anion_pi detection has been removed because its default geometry is not validated; historical results remain readable and scoreable")
+    obsolete_pi_flags = {"--hbond-pi-distance", "--hb-pi-distance", "--ch-pi-distance",
+                         "--hbond-pi-offset", "--hb-pi-offset", "--ch-pi-offset"}
+    if any(arg.split("=", 1)[0] in obsolete_pi_flags for arg in arguments):
+        parser.error("hydrogen-pi contacts now use the hydrogen-to-centroid distance; use --hbond-pi-hydrogen-distance or --ch-pi-hydrogen-distance. The old heavy-atom distance and offset gates were removed")
     # Reported in bug reports; also the quickest way for a user to tell whether the
     # ChimeraX bundle picked up the version of chemur it expects.
     parser.add_argument("--version", action="version", version=f"chemur {__version__}")
@@ -92,7 +108,10 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Disable default per-ligand outputs.",
     )
-    analyze_parser.add_argument("--include-raw", action="store_true", help="Include raw candidates in JSON/CSV.")
+    analyze_parser.add_argument(
+        "--include-raw", action="store_true",
+        help="Write raw candidates to separate .raw.json/.raw.csv reports alongside final outputs.",
+    )
     analyze_parser.add_argument("--threads", default="auto", help="Reserved for threaded C++ kernels.")
     analyze_parser.add_argument(
         "--no-ccd-smiles",
@@ -260,9 +279,25 @@ def main(argv: list[str] | None = None) -> int:
     traj_parser.add_argument("--csv", help="Write per-frame interaction rows as CSV to this path.")
     _add_rule_cutoff_args(traj_parser)
 
+    for command_parser in (analyze_parser, score_parser, traj_parser):
+        command_parser.add_argument(
+            "--assembly-overrides", metavar="FILE",
+            help="JSON file specifying final product chemistry for connected ligands/attachments.",
+        )
+    for command_parser in (score_parser, traj_parser):
+        command_parser.add_argument(
+            "--strict-ligand-templates", action="store_true",
+            help="Raise on unresolved ligand or assembly chemistry instead of skipping it.",
+        )
+
     args = parser.parse_args(argv)
 
     if args.command == "analyze":
+        if args.include_raw and args.no_split_by_ligand and not args.out and not args.csv:
+            parser.error(
+                "--include-raw requires --out, --csv, or per-ligand outputs "
+                "to write a separate raw report"
+            )
         if args.batch:
             return _run_batch_analyze(args, parser)
         return _run_single_analyze(args, parser)
@@ -303,6 +338,8 @@ def _run_trajectory(args: argparse.Namespace, parser: argparse.ArgumentParser) -
         frame_stride=args.stride,
         processes=args.processes,
         progress=_progress,
+        assembly_overrides=args.assembly_overrides,
+        strict_ligand_templates=args.strict_ligand_templates,
     )
 
     if args.out:
@@ -334,21 +371,27 @@ def _run_single_analyze(args: argparse.Namespace, parser: argparse.ArgumentParse
         **_common_analysis_kwargs(args),
     )
     if args.out:
-        result.to_json(args.out, include_raw=args.include_raw)
+        result.to_json(args.out, include_raw=False)
     if args.csv:
-        result.to_csv(args.csv, include_raw=args.include_raw)
+        result.to_csv(args.csv, include_raw=False)
+
+    raw_paths = _write_raw_reports(result, args.out, args.csv) if args.include_raw else []
 
     ligand_paths = []
     split_by_ligand = not args.no_split_by_ligand
     if split_by_ligand:
         ligand_paths = result.write_ligand_outputs(
             args.split_by_ligand_dir,
-            include_raw=args.include_raw,
+            include_raw=False,
             output_format=args.split_by_ligand_format,
         )
+        if args.include_raw:
+            raw_paths.extend(_write_ligand_raw_reports(
+                result, args.split_by_ligand_dir, args.split_by_ligand_format,
+            ))
 
     if not args.out and not args.csv and not split_by_ligand:
-        sys.stdout.write(result.to_json(include_raw=args.include_raw) + "\n")
+        sys.stdout.write(result.to_json(include_raw=False) + "\n")
     else:
         sys.stdout.write(
             f"Assigned {len(result.interactions)} interactions "
@@ -359,6 +402,7 @@ def _run_single_analyze(args: argparse.Namespace, parser: argparse.ArgumentParse
                 f"Wrote {len(ligand_paths)} per-ligand output files "
                 f"to {args.split_by_ligand_dir}\n"
             )
+        _report_raw_paths(raw_paths)
     return 0
 
 
@@ -377,9 +421,22 @@ def _run_batch_analyze(args: argparse.Namespace, parser: argparse.ArgumentParser
     )
 
     if args.out:
-        _write_batch_json(results, args.out, include_raw=args.include_raw)
+        _write_batch_json(results, args.out, include_raw=False)
     if args.csv:
-        _write_batch_csv(results, args.csv, include_raw=args.include_raw)
+        _write_batch_csv(results, args.csv, include_raw=False)
+
+    raw_paths = []
+    if args.include_raw and (args.out or args.csv):
+        raw_results = {batch_id: replace(result, interactions=[])
+                       for batch_id, result in results.items()}
+        if args.out:
+            raw_path = _raw_report_path(args.out)
+            _write_batch_json(raw_results, raw_path, include_raw=True)
+            raw_paths.append(raw_path)
+        if args.csv:
+            raw_path = _raw_report_path(args.csv)
+            _write_batch_csv(raw_results, raw_path, include_raw=True)
+            raw_paths.append(raw_path)
 
     ligand_paths = []
     split_by_ligand = not args.no_split_by_ligand
@@ -389,13 +446,18 @@ def _run_batch_analyze(args: argparse.Namespace, parser: argparse.ArgumentParser
             ligand_paths.extend(
                 result.write_ligand_outputs(
                     output_root / _safe_output_name(batch_id),
-                    include_raw=args.include_raw,
+                    include_raw=False,
                     output_format=args.split_by_ligand_format,
                 )
             )
+            if args.include_raw:
+                raw_paths.extend(_write_ligand_raw_reports(
+                    result, output_root / _safe_output_name(batch_id),
+                    args.split_by_ligand_format,
+                ))
 
     if not args.out and not args.csv and not split_by_ligand:
-        sys.stdout.write(json.dumps(_batch_payload(results, args.include_raw), indent=2, sort_keys=True) + "\n")
+        sys.stdout.write(json.dumps(_batch_payload(results, False), indent=2, sort_keys=True) + "\n")
     else:
         total_interactions = sum(len(result.interactions) for result in results.values())
         sys.stdout.write(
@@ -407,7 +469,55 @@ def _run_batch_analyze(args: argparse.Namespace, parser: argparse.ArgumentParser
                 f"Wrote {len(ligand_paths)} per-ligand output files "
                 f"to {args.split_by_ligand_dir}\n"
             )
+        _report_raw_paths(raw_paths)
     return 0
+
+
+def _raw_report_path(path: str | Path) -> Path:
+    path = Path(path)
+    return path.with_name(f"{path.stem}.raw{path.suffix}")
+
+
+def _write_raw_reports(
+    result: AnalysisResult, json_path: str | Path | None, csv_path: str | Path | None,
+) -> list[Path]:
+    """Write candidate-only sidecars without changing the result or API serializers."""
+    raw_result = replace(result, interactions=[])
+    written = []
+    if json_path is not None:
+        path = _raw_report_path(json_path)
+        raw_result.to_json(path, include_raw=True)
+        written.append(path)
+    if csv_path is not None:
+        path = _raw_report_path(csv_path)
+        raw_result.to_csv(path, include_raw=True)
+        written.append(path)
+    return written
+
+
+def _write_ligand_raw_reports(
+    result: AnalysisResult, output_dir: str | Path, output_format: str,
+) -> list[Path]:
+    output_path = Path(output_dir)
+    written = []
+    # Select from candidates so atoms/features referenced only by rejected
+    # contacts are retained in the raw report's chemistry context.
+    raw_result = replace(result, interactions=[])
+    for ligand_id, ligand_result in raw_result.split_by_ligand(include_raw=True).items():
+        slug = _slugify_component_id(ligand_id)
+        written.extend(_write_raw_reports(
+            ligand_result,
+            output_path / f"{slug}.json" if output_format in {"json", "both"} else None,
+            output_path / f"{slug}.csv" if output_format in {"csv", "both"} else None,
+        ))
+    return written
+
+
+def _report_raw_paths(paths: list[Path]) -> None:
+    if paths:
+        sys.stdout.write(f"Wrote {len(paths)} raw candidate reports:\n")
+        for path in paths:
+            sys.stdout.write(f"  {path}\n")
 
 
 def _run_score(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
@@ -435,6 +545,8 @@ def _run_score(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int
         ifm_engine=args.ifm_engine,
         ifm_workers=args.ifm_workers,
         include_reference=args.include_reference,
+        assembly_overrides=args.assembly_overrides,
+        strict_ligand_templates=args.strict_ligand_templates,
     )
 
     if args.out:
@@ -501,6 +613,7 @@ def _common_analysis_kwargs(args: argparse.Namespace) -> dict:
         "include_raw": args.include_raw,
         "threads": args.threads,
         "strict_ligand_templates": args.strict_ligand_templates,
+        "assembly_overrides": args.assembly_overrides,
     }
 
 
@@ -538,6 +651,7 @@ def _write_batch_csv(results: dict[str, object], path: str | Path, *, include_ra
         "resource_demands",
         "resource_labels",
         "rejection_reason",
+        "metadata",
     ]
     with Path(path).open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -554,6 +668,7 @@ def _write_batch_csv(results: dict[str, object], path: str | Path, *, include_ra
                         "batch_id": batch_id,
                         "batch_ligand_component_ids": ";".join(ligand_ids),
                         **row,
+                        "metadata": json.dumps(row["metadata"], sort_keys=True),
                     }
                 )
 
@@ -569,15 +684,15 @@ def _add_rule_cutoff_args(parser: argparse.ArgumentParser) -> None:
         cutoff_group.add_argument(
             *flags,
             dest=_override_dest(rule_name, cutoff_name),
-            type=float,
+            type=int if cutoff_name == "min_residue_separation" else float,
             default=None,
             metavar="VALUE",
             help=help_text,
         )
 
 
-def _rule_overrides_from_args(args: argparse.Namespace) -> dict[str, dict[str, float]]:
-    overrides: dict[str, dict[str, float]] = {}
+def _rule_overrides_from_args(args: argparse.Namespace) -> dict[str, dict[str, float | int]]:
+    overrides: dict[str, dict[str, float | int]] = {}
     for rule_name, cutoff_name, _, _ in RULE_CUTOFF_FLAGS:
         value = getattr(args, _override_dest(rule_name, cutoff_name))
         if value is not None:

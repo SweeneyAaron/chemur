@@ -130,7 +130,7 @@ def test_chalcogen_bond_uses_the_best_substituent_as_the_sigma_hole_axis():
     # The second substituent sits at (0.31, -1.77, 0), so its sigma-hole extends
     # along roughly (-0.17, 0.985).
     acceptor = (-0.17 * 3.2, 0.985 * 3.2, 0.0)
-    candidates = detect(*sulfur_with_acceptor(acceptor, substituent="N"))
+    candidates = detect(*sulfur_with_acceptor(acceptor, substituent="C"))
     bonds = of_type(candidates, "chalcogen_bond")
 
     assert len(bonds) == 1
@@ -138,19 +138,20 @@ def test_chalcogen_bond_uses_the_best_substituent_as_the_sigma_hole_axis():
     assert bonds[0].metadata["sigma_hole_root_atom_id"] == 2
 
 
-def test_chalcogen_bond_rejected_when_the_sulfur_has_no_sigma_hole():
-    """A plain MET thioether is perfect geometrically and inert electronically."""
+def test_chalcogen_bond_accepts_methionine_under_published_geometric_convention():
+    """The published atom-pair search includes ordinary methionine sulfur."""
     bonds = of_type(detect(*sulfur_with_acceptor((3.2, 0.0, 0.0))), "chalcogen_bond")
 
     assert len(bonds) == 1
     assert bonds[0].angle == pytest.approx(180.0)
-    assert bonds[0].rejection_reason == "sigma_hole_not_activated"
+    assert bonds[0].rejection_reason is None
     assert bonds[0].metadata["sigma_hole_activated"] is False
 
 
-def test_activation_requirement_can_be_switched_off():
+def test_activation_requirement_is_not_an_active_cutoff():
     atoms, components = sulfur_with_acceptor((3.2, 0.0, 0.0))
-    profile = load_profile({"rules": {"chalcogen_bond": {"require_activated_sigma_hole": False}}})
+    profile = load_profile()
+    assert "require_activated_sigma_hole" not in profile["rules"]["chalcogen_bond"]
 
     bonds = of_type(detect(atoms, components, profile), "chalcogen_bond")
     assert bonds[0].rejection_reason is None
@@ -282,9 +283,10 @@ def test_n_pi_star_rejected_beyond_the_van_der_waals_sum():
     assert of_type(detect(*carbonyl_pair(3.6, 109.0)), "n_pi_star") == []
 
 
-def test_n_pi_star_rejected_for_an_in_plane_approach():
-    """Correct angle but in the sp2 plane: that is not an approach along pi*."""
-    assert of_type(detect(*carbonyl_pair(3.0, 109.0, in_plane=True)), "n_pi_star") == []
+def test_n_pi_star_does_not_add_an_unpublished_plane_gate():
+    contacts = of_type(detect(*carbonyl_pair(3.0, 109.0, in_plane=True)), "n_pi_star")
+    assert len(contacts) == 1
+    assert contacts[0].metadata["approach_angle"] == pytest.approx(90.)
 
 
 # ------------------------------------------------------------------ tetrel bond
@@ -300,11 +302,12 @@ def methyl_with_acceptor(hydrogen_coords):
     ]
     _assign_default_atom_chemistry(atoms)
     atoms.append(
-        AtomRecord(5, "O1", "O", (3.1, 0.0, 0.0), "LIG", "2", "B", "B:LIG:2", "ligand", acceptor_capacity=2)
+        AtomRecord(5, "O1", "O", (3.1, 0.0, 0.0), "LIG", "2", "B", "B:LIG:2", "ligand", acceptor_capacity=2, bonds=(6,))
     )
+    atoms.append(AtomRecord(6, "C1", "C", (4.33, 0., 0.), "LIG", "2", "B", "B:LIG:2", "ligand", bonds=(5,)))
     components = [
         ComponentRecord("A:MET:1", "MET", "A", "1", "protein", (0, 1, 2, 3, 4)),
-        ComponentRecord("B:LIG:2", "LIG", "B", "2", "ligand", (5,)),
+        ComponentRecord("B:LIG:2", "LIG", "B", "2", "ligand", (5, 6), metadata={"template_carbonyls": [(6, 5)]}),
     ]
     return atoms, components
 
@@ -320,15 +323,16 @@ def test_tetrel_bond_accepted_when_hydrogens_point_away():
     assert bonds[0].angle == pytest.approx(180.0)
 
 
-def test_tetrel_bond_rejected_when_a_ch_points_at_the_acceptor():
-    """That contact is a C-H...O, and weak_hbond outranks tetrel_bond anyway."""
+def test_tetrel_bond_does_not_add_an_unpublished_hydrogen_angle_gate():
+    """The two published heavy-atom angles define tetrel geometry."""
     atoms, components = methyl_with_acceptor(
         [(0.9, 0.35, 0.0), (-0.4, -0.5, 0.87), (-0.4, -0.5, -0.87)]
     )
-    bonds = of_type(detect(atoms, components), "tetrel_bond")
+    bonds = of_type(detect(atoms, components, load_profile({"occlusion_radius": 0.1})), "tetrel_bond")
 
     assert len(bonds) == 1
-    assert bonds[0].rejection_reason.startswith("hydrogen_contact")
+    assert bonds[0].rejection_reason is None
+    assert bonds[0].metadata["acceptor_angle"] == pytest.approx(180.)
 
 
 # ----------------------------------------------------------------- amide bridge
@@ -354,6 +358,7 @@ def test_amide_bridge_detects_a_reciprocal_amide_pair():
         ComponentRecord("B:GLY:2", "GLY", "B", "2", "protein", (8, 9)),
     ]
 
+    _assign_default_atom_chemistry(atoms)
     # The backbone amide spans two residues, so it can only be built across components.
     amides = [f for f in perceive_features(atoms, components) if f.feature_type == "amide"]
     assert [f.atom_ids for f in amides] == [(0, 1, 3), (5, 6, 8)]
@@ -380,16 +385,17 @@ def anion_near_phenyl(coord):
 
 
 def test_anion_in_the_ring_plane_is_edgewise_not_face_on():
-    accepted = accepted_types(detect(*anion_near_phenyl((4.0, 0.0, 0.0))))
+    accepted = accepted_types(detect(*anion_near_phenyl((4.0, 0.0, 0.0)),
+        profile=load_profile({"rules": {"anion_aromatic_edge": {"enabled": True}}})))
 
     assert "anion_aromatic_edge" in accepted
     assert "anion_pi" not in accepted
 
 
-def test_anion_on_the_ring_axis_is_face_on_not_edgewise():
+def test_anion_face_rule_is_removed_and_edge_is_not_enabled_by_default():
     accepted = accepted_types(detect(*anion_near_phenyl((0.0, 0.0, 3.5))))
 
-    assert "anion_pi" in accepted
+    assert "anion_pi" not in accepted
     assert "anion_aromatic_edge" not in accepted
 
 
@@ -429,29 +435,32 @@ def hbond_pair(donor_element, acceptor_element, separation):
     atoms = [
         AtomRecord(0, "D", donor_element, (0.0, 0.0, 0.0), "CYS", "1", "A", "A:CYS:1", "protein", bonds=(1,)),
         AtomRecord(1, "H", "H", (1.0, 0.0, 0.0), "CYS", "1", "A", "A:CYS:1", "protein", bonds=(0,)),
-        AtomRecord(2, "A", acceptor_element, (separation, 0.0, 0.0), "LIG", "2", "B", "B:LIG:2", "ligand"),
+        AtomRecord(2, "A", acceptor_element, (separation, 0.0, 0.0), "LIG", "2", "B", "B:LIG:2", "ligand", bonds=(3,)),
+        AtomRecord(3, "C1", "C", (separation + 1.23, 0.0, 0.0), "LIG", "2", "B", "B:LIG:2", "ligand", bonds=(2,)),
     ]
     _assign_default_atom_chemistry(atoms)
+    # This fixture tests geometry; the synthetic ligand has no chemical template.
+    atoms[2].acceptor_capacity = 2
     components = [
         ComponentRecord("A:CYS:1", "CYS", "A", "1", "protein", (0, 1)),
-        ComponentRecord("B:LIG:2", "LIG", "B", "2", "ligand", (2,)),
+        ComponentRecord("B:LIG:2", "LIG", "B", "2", "ligand", (2, 3)),
     ]
     return atoms, components
 
 
-def test_sulfur_hbond_uses_the_longer_cutoff():
-    """d(S...A) ~ 3.5 A is normal for sulfur; a flat 3.5 A cutoff truncated it."""
-    assert "hbond" in accepted_types(detect(*hbond_pair("S", "O", 3.8)))
+def test_hbond_uses_the_published_distance_window_for_all_typed_donors():
+    assert "hbond" not in accepted_types(detect(*hbond_pair("S", "O", 3.8)))
     # The same distance between N and O is beyond the ordinary cutoff.
     assert "hbond" not in accepted_types(detect(*hbond_pair("N", "O", 3.8)))
 
 
-def test_short_hydrogen_bond_is_flagged_low_barrier():
+def test_short_hydrogen_bond_does_not_infer_low_barrier_energetics():
     bonds = of_type(detect(*hbond_pair("N", "O", 2.5)), "hbond")
 
     assert bonds
-    assert bonds[0].metadata["short_strong"] is True
-    assert bonds[0].metadata["interaction_subtype"] == "low_barrier"
+    assert bonds[0].rejection_reason is None
+    assert "short_strong" not in bonds[0].metadata
+    assert "interaction_subtype" not in bonds[0].metadata
 
 
 def test_ordinary_hydrogen_bond_is_not_flagged_low_barrier():
@@ -543,7 +552,7 @@ def test_chalcogen_pi_does_not_require_an_activated_sigma_hole():
     """Met-S...pi is dispersion driven, not a sigma-hole interaction; gating it would
     delete the biotin-Trp contacts that motivated keeping the two types separate."""
     donor = AtomRecord(6, "S1", "S", (0.0, 0.0, 4.2), "LIG", "2", "B", "B:LIG:2", "ligand",
-                       chalcogen_donor_capacity=2, sigma_hole_activated=False, bonds=(7,))
+                       chalcogen_donor_capacity=2, sigma_hole_activated=False, bonds=(7,), metadata={"sulfur_pi_types": ["thioether"]})
     substituent = AtomRecord(7, "C6", "C", (0.0, 1.6, 5.0), "LIG", "2", "B", "B:LIG:2", "ligand",
                              bonds=(6,))
     components = [
@@ -558,7 +567,7 @@ def test_multi_atom_occlusion_ignores_the_participants_own_substituents():
     """A centroid-to-centroid segment clips the bonded neighbours of the very atoms
     taking part; biotin's S...pi to Trp was lost to exactly that."""
     donor = AtomRecord(6, "S1", "S", (0.0, 0.0, 4.2), "LIG", "2", "B", "B:LIG:2", "ligand",
-                       chalcogen_donor_capacity=2, bonds=(7,))
+                       chalcogen_donor_capacity=2, bonds=(7,), metadata={"sulfur_pi_types": ["thioether"]})
     # A substituent sitting directly on the S -> ring-centroid line.
     substituent = AtomRecord(7, "C6", "C", (0.0, 0.0, 2.6), "LIG", "2", "B", "B:LIG:2", "ligand",
                              bonds=(6,))
@@ -594,12 +603,14 @@ def test_deuterated_donor_forms_a_hydrogen_bond():
         # As deposited by a neutron refinement: the exchangeable donor is a deuteron.
         AtomRecord(1, "D", "H", (1.0, 0.0, 0.0), "GLY", "1", "A", "A:GLY:1", "protein",
                    bonds=(0,), metadata={"isotope": "D"}),
-        AtomRecord(2, "O1", "O", (2.9, 0.0, 0.0), "LIG", "2", "B", "B:LIG:2", "ligand"),
+        AtomRecord(2, "O1", "O", (2.9, 0.0, 0.0), "LIG", "2", "B", "B:LIG:2", "ligand", bonds=(3,)),
+        AtomRecord(3, "C1", "C", (4.13, 0., 0.), "LIG", "2", "B", "B:LIG:2", "ligand", bonds=(2,)),
     ]
     _assign_default_atom_chemistry(atoms)
+    atoms[2].acceptor_capacity = 2  # chemically specified synthetic acceptor
     components = [
         ComponentRecord("A:GLY:1", "GLY", "A", "1", "protein", (0, 1)),
-        ComponentRecord("B:LIG:2", "LIG", "B", "2", "ligand", (2,)),
+        ComponentRecord("B:LIG:2", "LIG", "B", "2", "ligand", (2, 3)),
     ]
 
     bonds = of_type(detect(atoms, components), "hbond")

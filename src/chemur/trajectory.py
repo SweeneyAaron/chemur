@@ -31,12 +31,11 @@ from typing import Any, Callable, Iterable, Sequence
 import numpy as np
 
 from .api import assign_for_atoms
-from .chemistry import apply_ligand_smiles_templates, mark_untemplated_ligands_ignored
-from .ccd import fetch_missing_ligand_smiles_from_ccd
 from .models import AssignedInteraction, AtomRecord, ComponentRecord
 from .parser import parse_structure
 from .profile import apply_rule_overrides, load_profile
-from .protonation import prepare_ligand_smiles
+from .geometry_catalogue import geometry_result_metadata
+from .preparation import prepare_ligand_chemistry
 
 # Molecule types the parser assigns; used for solvent/ion exclusion.
 SOLVENT_TYPE = "solvent"
@@ -106,10 +105,10 @@ class ArrayFrameSource:
 class MDAnalysisFrameSource:
     """Read a trajectory (``.gro``/``.xtc`` etc.) directly via MDAnalysis.
 
-    The topology is parsed by writing frame 0 to a temporary PDB and handing that
-    to :func:`parse_structure` (gemmi cannot read ``.gro``/``.xtc``). Per-frame
-    coordinates are streamed from the MDAnalysis ``Universe`` in topology atom
-    order. MDAnalysis reports positions in Angstrom, matching Chemur.
+    Original PDB/mmCIF chemistry is retained when deposited identities align to
+    the trajectory topology. Other formats use a temporary PDB for coordinates
+    plus the explicit MDAnalysis bond table; unknown bond orders remain unknown.
+    Per-frame coordinates follow MDAnalysis topology order and are in Angstrom.
 
     PBC caveat: coordinates are used as stored in the trajectory. If the
     trajectory is wrapped into the primary unit cell, molecules can be split
@@ -144,23 +143,146 @@ class MDAnalysisFrameSource:
 
     def parse_topology(self) -> tuple[list[AtomRecord], list[ComponentRecord]]:
         u = self._u()
-        handle = tempfile.NamedTemporaryFile(suffix=".pdb", delete=False)
-        handle.close()
-        try:
-            u.trajectory[0]
-            u.atoms.write(handle.name)
-            atoms, components = parse_structure(handle.name)
-        finally:
+        u.trajectory[0]
+
+        def optional(record, name, default=None):
             try:
-                os.unlink(handle.name)
-            except OSError:
-                pass
+                return getattr(record, name)
+            except (AttributeError, ValueError, KeyError):
+                # Optional topology attributes raise MDAnalysis.NoDataError
+                # (an AttributeError/ValueError subclass) when unavailable.
+                return default
+
+        source_path = Path(self.topology)
+        if source_path.suffix.lower() in {".pdb", ".ent", ".cif", ".mmcif"} and source_path.is_file():
+            # A PDB round-trip discards named dictionaries, branch leaving atoms,
+            # and source identifiers. Use the original whenever it is alignable.
+            source_atoms, components = parse_structure(source_path)
+            atoms = []
+            unused = {atom.atom_id: atom for atom in source_atoms}
+            for index, topology_atom in enumerate(u.atoms):
+                name = str(optional(topology_atom, "name", "")).strip()
+                residue_name = str(optional(topology_atom, "resname", "")).strip().upper()
+                residue = str(optional(topology_atom, "resid", "")).strip()
+                insertion = str(optional(topology_atom, "icode", "") or "").strip(" .?")
+                if insertion and not residue.endswith(insertion):
+                    residue += insertion
+                chain = str(optional(topology_atom, "chainID", "") or "").strip(" .?")
+                altloc = str(optional(topology_atom, "altLoc", "") or "").strip("\x00 .?")
+                candidates = [atom for atom in unused.values()
+                              if atom.name == name and atom.residue_name == residue_name
+                              and atom.residue_id == residue
+                              and (not chain or atom.chain_id == chain)
+                              and (not altloc or atom.metadata.get("source_altloc") == altloc)]
+                serial = optional(topology_atom, "id")
+                serial_matches = [atom for atom in candidates if atom.serial == serial]
+                if len(candidates) != 1 and len(serial_matches) == 1:
+                    candidates = serial_matches
+                if len(candidates) != 1:
+                    raise ValueError(
+                        f"Cannot uniquely align MDAnalysis topology atom {index} "
+                        f"({residue_name}:{residue}:{name}) to its source structure. "
+                        "Source assembly chemistry cannot be transferred safely."
+                    )
+                atom = candidates[0]
+                atoms.append(atom)
+                unused.pop(atom.atom_id)
+            if unused:
+                raise ValueError("Topology atom count mismatch between source structure and MDAnalysis universe")
+        else:
+            handle = tempfile.NamedTemporaryFile(suffix=".pdb", delete=False)
+            handle.close()
+            try:
+                # CONECT output can turn unspecified MD bond order into a single
+                # bond. Transfer the original bond table below instead.
+                u.atoms.write(handle.name, bonds=None)
+                atoms, components = parse_structure(handle.name)
+            finally:
+                try:
+                    os.unlink(handle.name)
+                except OSError:
+                    pass
         if len(atoms) != len(u.atoms):
             raise ValueError(
                 "Topology atom count mismatch between the parsed PDB "
                 f"({len(atoms)}) and the MDAnalysis universe ({len(u.atoms)}). "
                 "The trajectory cannot be aligned to the topology."
             )
+        for index, atom in enumerate(atoms):
+            atom.coord = tuple(float(value) for value in u.atoms.positions[index])
+
+        from copy import deepcopy
+        from .connectivity import _COORDINATION_METALS, _merge_links, _order
+
+        by_component = {component.component_id: component for component in components}
+        # Source links occur in both endpoint components. Merge unique records
+        # once so repeated topology parsing does not multiply their provenance.
+        existing_links = {json.dumps(link, sort_keys=True): deepcopy(link)
+                          for component in components
+                          for link in component.metadata.get("structure_links", ())}
+        links = list(existing_links.values())
+        topology_bonds = optional(u, "bonds")
+        if topology_bonds is not None:
+            for bond in topology_bonds:
+                if optional(bond, "is_guessed", False):
+                    continue
+                indices = tuple(int(index) for index in bond.indices)
+                if len(indices) != 2 or any(index < 0 or index >= len(atoms) for index in indices):
+                    raise ValueError("MDAnalysis bond references an unavailable topology atom")
+                first, second = (atoms[index] for index in indices)
+                if (first.element in _COORDINATION_METALS or second.element in _COORDINATION_METALS
+                        or first.molecule_type == "ion" or second.molecule_type == "ion"):
+                    continue
+                raw_order = optional(bond, "order")
+                order = _order(raw_order)
+                if order is None and raw_order is not None:
+                    try:
+                        numeric_order = float(raw_order)
+                        order = numeric_order if numeric_order in {1., 1.5, 2., 3.} else None
+                    except (TypeError, ValueError):
+                        pass
+                component_ids = list(dict.fromkeys((first.component_id, second.component_id)))
+                link = {
+                    "atom_ids": [first.atom_id, second.atom_id], "component_ids": component_ids,
+                    "order": order, "leaving_atoms": [], "kind": "covalent",
+                    "source": "mdanalysis_topology",
+                    "provenance": [{"source": "mdanalysis_topology", "record_id": f"{indices[0]}-{indices[1]}"}],
+                    "endpoints": [{"component_ids": [atom.component_id], "atom_names": [atom.name]}
+                                  for atom in (first, second)],
+                }
+                if raw_order is not None and order is None:
+                    link["error"] = f"Unsupported MDAnalysis covalent bond order: {raw_order}"
+                if first.component_id != second.component_id:
+                    links.append(link)
+                elif order is not None:
+                    component = by_component[first.component_id]
+                    record = {"atom_id_1": first.atom_id, "atom_id_2": second.atom_id, "order": order}
+                    orders = component.metadata.setdefault("bond_orders", [])
+                    old = next((entry for entry in orders
+                                if {entry["atom_id_1"], entry["atom_id_2"]} == {first.atom_id, second.atom_id}), None)
+                    if old is None:
+                        orders.append(record)
+                    elif old["order"] != order:
+                        link["error"] = "Conflicting MDAnalysis intracomponent bond orders"
+                        links.append(link)
+                if not link.get("error"):
+                    first.bonds = tuple(sorted(set(first.bonds) | {second.atom_id}))
+                    second.bonds = tuple(sorted(set(second.bonds) | {first.atom_id}))
+        merged_links = _merge_links(links)
+        for component in components:
+            component.metadata.pop("structure_links", None)
+        by_id = {atom.atom_id: atom for atom in atoms}
+        for link in merged_links:
+            for cid in link["component_ids"]:
+                by_component[cid].metadata.setdefault("structure_links", []).append(deepcopy(link))
+            if link.get("error") or len(link.get("atom_ids", ())) != 2:
+                continue
+            first, second = (by_id[aid] for aid in link["atom_ids"])
+            if first.component_id != second.component_id:
+                for atom, neighbor in ((first, second), (second, first)):
+                    atom.metadata["assembly_link_neighbors"] = sorted(
+                        set(atom.metadata.get("assembly_link_neighbors", ())) | {neighbor.atom_id}
+                    )
         return atoms, components
 
     @property
@@ -195,7 +317,8 @@ class TrajectoryResult:
     ``atoms``/``components`` are the (filtered) topology; their coordinates hold
     the last analysed frame. ``frame_indices`` are the original trajectory frame
     numbers that were analysed (after start/stop/stride); ``frames`` are aligned
-    to ``frame_indices``.
+    to ``frame_indices``. Atom IDs retain their topology identity after filtering
+    and may be noncontiguous; they are identifiers, not offsets into ``atoms``.
     """
 
     atoms: list[AtomRecord]
@@ -212,7 +335,9 @@ class TrajectoryResult:
 
     @staticmethod
     def interaction_key(inter: AssignedInteraction) -> InteractionKey:
-        """Stable identity for a contact across frames: type + atom-id set."""
+        """Use the enclosed centre for enclosures, and all atoms for other contacts."""
+        if inter.interaction_type == "hydrophobic_enclosure":
+            return (inter.interaction_type, frozenset({inter.metadata["center_atom_id"]}))
         return (inter.interaction_type, frozenset(inter.atom_ids))
 
     def aggregates(self) -> dict[str, Any]:
@@ -233,13 +358,18 @@ class TrajectoryResult:
         for frame in self.frames:
             seen: set[InteractionKey] = set()
             for inter in frame.interactions:
-                key = (inter.interaction_type, frozenset(inter.atom_ids))
+                key = self.interaction_key(inter)
                 if key not in seen:
                     seen.add(key)
                     present[key] = present.get(key, 0) + 1
                 dist_sum[key] = dist_sum.get(key, 0.0) + inter.distance
                 dist_n[key] = dist_n.get(key, 0) + 1
                 if key not in labels:
+                    if inter.interaction_type == "hydrophobic_enclosure":
+                        center_id = inter.metadata["center_atom_id"]
+                        center = atoms_by_id.get(center_id)
+                        labels[key] = center.label if center is not None else str(center_id)
+                        continue
                     residues: list[str] = []
                     rseen: set[str] = set()
                     for atom_id in inter.atom_ids:
@@ -289,6 +419,8 @@ class TrajectoryResult:
                     "offset": None if best is None or best.offset is None else round(best.offset, 4),
                 }
             )
+            if key[0] == "hydrophobic_enclosure":
+                series[-1]["metadata"] = {} if best is None else dict(best.metadata)
         return series
 
     def counts_per_frame(self) -> dict[str, Any]:
@@ -306,7 +438,7 @@ class TrajectoryResult:
         return {"frames": list(self.frame_indices), "total": total, "by_type": by_type}
 
     def interaction_labels(self) -> dict[InteractionKey, str]:
-        """Human-readable ``residueA <-> residueB`` label per interaction key."""
+        """Residue-pair labels, or full centre-atom labels for enclosures."""
         return self.aggregates()["labels"]
 
     def rows(self) -> list[dict[str, Any]]:
@@ -328,6 +460,7 @@ class TrajectoryResult:
                         "distance": round(inter.distance, 4),
                         "angle": None if inter.angle is None else round(inter.angle, 4),
                         "offset": None if inter.offset is None else round(inter.offset, 4),
+                        "metadata": dict(inter.metadata),
                     }
                 )
         return rows
@@ -342,11 +475,15 @@ class TrajectoryResult:
             "distance",
             "angle",
             "offset",
+            "metadata",
         ]
         with Path(path).open("w", encoding="utf-8", newline="") as handle:
             writer = csv.DictWriter(handle, fieldnames=fieldnames)
             writer.writeheader()
-            writer.writerows(self.rows())
+            writer.writerows(
+                {**row, "metadata": json.dumps(row["metadata"], sort_keys=True)}
+                for row in self.rows()
+            )
 
     def to_dict(self) -> dict[str, Any]:
         labels = self.interaction_labels()
@@ -422,7 +559,9 @@ def _build_keep_mask(
     """Filter solvent/ion atoms and return (atoms, components, original-index array).
 
     ``keep_index`` maps the kept atoms back to their column in the full coordinate
-    stack. Atom ids are renumbered 0..k-1 so downstream code stays consistent.
+    stack. Atom IDs remain unchanged so bonds and chemistry metadata keep their
+    original meaning. Coordinate columns follow topology order, independently of
+    atom IDs.
     """
     drop_types: set[str] = set()
     if exclude_solvent:
@@ -431,26 +570,22 @@ def _build_keep_mask(
         drop_types.add(ION_TYPE)
 
     if not drop_types:
-        keep_index = np.array([a.atom_id for a in atoms], dtype=np.int64)
+        keep_index = np.arange(len(atoms), dtype=np.int64)
         return atoms, components, keep_index
 
-    # Two passes: build the *complete* old->new id map for all kept atoms first,
-    # then remap bonds. A single pass would drop each atom's bonds to atoms that
-    # appear later in the list (e.g. a donor N's bond to its hydrogens), which
-    # silently breaks H-bond detection (it relies on donor_atom.bonds -> H).
-    kept_atoms: list[AtomRecord] = [a for a in atoms if a.molecule_type not in drop_types]
-    keep_index_list: list[int] = [a.atom_id for a in kept_atoms]
-    old_to_new: dict[int, int] = {old: new for new, old in enumerate(keep_index_list)}
+    keep_index_list = [
+        index for index, atom in enumerate(atoms) if atom.molecule_type not in drop_types
+    ]
+    kept_atoms = [atoms[index] for index in keep_index_list]
+    kept_ids = {atom.atom_id for atom in kept_atoms}
     for atom in kept_atoms:
-        new_bonds = tuple(old_to_new[b] for b in atom.bonds if b in old_to_new)
-        atom.atom_id = old_to_new[atom.atom_id]
-        atom.bonds = new_bonds
+        atom.bonds = tuple(neighbor for neighbor in atom.bonds if neighbor in kept_ids)
 
     kept_components: list[ComponentRecord] = []
     for comp in components:
-        new_ids = tuple(old_to_new[a] for a in comp.atom_ids if a in old_to_new)
-        if new_ids:
-            comp.atom_ids = new_ids
+        retained_ids = tuple(atom_id for atom_id in comp.atom_ids if atom_id in kept_ids)
+        if retained_ids:
+            comp.atom_ids = retained_ids
             kept_components.append(comp)
 
     return kept_atoms, kept_components, np.array(keep_index_list, dtype=np.int64)
@@ -473,6 +608,8 @@ def analyze_trajectory(
     frame_stride: int = 1,
     processes: int = 1,
     progress: Callable[[int, int], None] | None = None,
+    assembly_overrides: dict | str | Path | None = None,
+    strict_ligand_templates: bool = False,
 ) -> TrajectoryResult:
     """Analyse interactions for every selected frame of a trajectory.
 
@@ -490,27 +627,16 @@ def analyze_trajectory(
             f"{frame_source.n_atoms}; cannot align frames to topology."
         )
 
-    # One-time ligand templating (topology-based, coordinate independent).
-    input_smiles = {k.upper(): v for k, v in (ligand_smiles or {}).items()}
-    if not input_smiles and fetch_ccd_smiles:
-        ccd = fetch_missing_ligand_smiles_from_ccd(components)
-        input_smiles = ccd.smiles
-    smiles = prepare_ligand_smiles(
-        input_smiles,
-        protonate=protonate,
-        ph_min=protonate_ph_min,
-        ph_max=protonate_ph_max,
+    # The same topology preparation as static analysis, once before workers.
+    chemistry_metadata = prepare_ligand_chemistry(
+        atoms, components, ligand_smiles=ligand_smiles,
+        assembly_overrides=assembly_overrides, fetch_ccd=fetch_ccd_smiles,
+        protonate=protonate, ph_min=protonate_ph_min, ph_max=protonate_ph_max,
+        strict=strict_ligand_templates,
     )
-    has_ligands = any(c.molecule_type == "ligand" for c in components)
-    if has_ligands:
-        if smiles:
-            mark_untemplated_ligands_ignored(
-                atoms, components, smiles, reason="No SMILES template was available"
-            )
-        apply_ligand_smiles_templates(atoms, components, smiles)
 
-    # Filter solvent/ions AFTER templating; renumbers atom ids and yields the
-    # column map back into the full coordinate stack.
+    # Filter solvent/ions AFTER templating, preserving atom IDs and returning the
+    # topology-column map back into the full coordinate stack.
     atoms, components, keep_index = _build_keep_mask(
         atoms, components, exclude_solvent, exclude_ions
     )
@@ -547,6 +673,10 @@ def analyze_trajectory(
                 if progress is not None:
                     progress(done, n)
         frames.sort(key=lambda f: f.frame_index)
+        # Workers update their own topology copies. Keep the returned topology's
+        # coordinates consistent with serial execution and the last analysed frame.
+        if frame_indices:
+            _set_frame_coords(atoms, keep_index, frame_source.coords_for(frame_indices[-1]))
 
     return TrajectoryResult(
         atoms=atoms,
@@ -555,6 +685,7 @@ def analyze_trajectory(
         frames=frames,
         profile_name=str(profile_data.get("name", "default")),
         metadata={
+            **geometry_result_metadata(profile_data),
             "n_frames_total": frame_source.n_frames,
             "n_frames_analysed": n,
             "frame_start": frame_start,
@@ -564,6 +695,7 @@ def analyze_trajectory(
             "exclude_ions": exclude_ions,
             "processes": processes,
             "n_atoms": len(atoms),
-            "ligand_smiles": smiles,
+            **chemistry_metadata,
+            "strict_ligand_templates": strict_ligand_templates,
         },
     )
